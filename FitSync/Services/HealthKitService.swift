@@ -90,25 +90,6 @@ final class HealthKitService {
         }
     }
 
-    // MARK: - Fetch Heart Rate
-
-    func fetchHeartRateSamples(for workout: HKWorkout) async throws -> [(date: Date, bpm: Double)] {
-        let hrType = HKQuantityType(.heartRate)
-        let predicate = HKQuery.predicateForSamples(
-            withStart: workout.startDate,
-            end: workout.endDate
-        )
-        let descriptor = HKSampleQueryDescriptor(
-            predicates: [.quantitySample(type: hrType, predicate: predicate)],
-            sortDescriptors: [SortDescriptor(\.startDate)]
-        )
-        let samples = try await descriptor.result(for: store)
-        return samples.map { sample in
-            let bpm = sample.quantity.doubleValue(for: HKUnit.count().unitDivided(by: .minute()))
-            return (date: sample.startDate, bpm: bpm)
-        }
-    }
-
     // MARK: - Helpers
 
     private func hkActivityType(for type: WorkoutType) -> HKWorkoutActivityType {

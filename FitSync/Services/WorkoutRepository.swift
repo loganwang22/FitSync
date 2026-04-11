@@ -18,12 +18,6 @@ final class WorkoutRepository {
         try context.save()
     }
 
-    func allHealthKitUUIDs() throws -> Set<String> {
-        let descriptor = FetchDescriptor<Workout>()
-        let workouts = try context.fetch(descriptor)
-        return Set(workouts.map(\.healthKitUUID))
-    }
-
     // MARK: - Queries
 
     func fetchWorkouts(type: WorkoutType? = nil, limit: Int? = nil) -> [Workout] {
@@ -71,8 +65,6 @@ final class WorkoutRepository {
         let totalDistance = workouts.compactMap(\.distanceMeters).reduce(0, +)
         let totalDuration = workouts.map(\.durationSeconds).reduce(0, +)
         let totalCalories = workouts.compactMap(\.activeEnergyKcal).reduce(0, +)
-        let heartRates = workouts.compactMap(\.avgHeartRate)
-        let avgHR = heartRates.isEmpty ? nil : heartRates.reduce(0, +) / Double(heartRates.count)
         let totalElevationGain = workouts.compactMap(\.elevationGainMeters).reduce(0, +)
 
         var avgPace: Double? = nil
@@ -91,7 +83,6 @@ final class WorkoutRepository {
             totalCalories: totalCalories,
             workoutCount: workouts.count,
             avgPaceSecondsPerKm: avgPace,
-            avgHeartRate: avgHR,
             totalElevationGainMeters: totalElevationGain
         )
     }

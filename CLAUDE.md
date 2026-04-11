@@ -15,9 +15,9 @@ FitSync is a native iOS app (iOS 17+, SwiftUI, SwiftData) that reads workout dat
 This is an Xcode project with no SwiftPM manifest and no test target. Use `xcodebuild` from the repo root (project file is `FitSync.xcodeproj`, scheme is `FitSync`).
 
 ```sh
-# Build for the simulator
+# Build for the simulator (pick any sim from `xcrun simctl list devices`)
 xcodebuild -project FitSync.xcodeproj -scheme FitSync \
-  -destination 'platform=iOS Simulator,name=iPhone 15' build
+  -destination 'generic/platform=iOS Simulator' build
 
 # Clean
 xcodebuild -project FitSync.xcodeproj -scheme FitSync clean
@@ -64,7 +64,7 @@ SwiftUI Views           ──  WorkoutList, WorkoutDetail, Summary, Trends
 
 Key invariants:
 
-- **`Workout.healthKitUUID` is the unique key.** `SyncCoordinator.performSync` fetches existing UUIDs via `WorkoutRepository.allHealthKitUUIDs()` and only inserts new ones — incremental sync is based on `lastSyncDate`, with an initial pull going back `historicalMonths` (default 12).
+- **`Workout.healthKitUUID` is the unique key.** `SyncCoordinator.performSync` builds a `[uuid: Workout]` map from the repository and only inserts UUIDs not already persisted — incremental sync is based on `lastSyncDate`, with an initial pull going back `historicalMonths` (default 12).
 - **SwiftData predicates cannot use enum values directly.** `Workout.type` is a computed `WorkoutType`, but the stored property is `typeRawValue: Int`. Any `#Predicate<Workout>` filtering by type must read `typeRawValue` and compare to a local `let rawValue = type.rawValue` captured outside the predicate — see `WorkoutRepository.fetchWorkouts(in:...)` for the pattern.
 - **Route points cascade delete** via `@Relationship(deleteRule: .cascade, inverse: \RoutePoint.workout)` on `Workout.routePoints`. Don't manually delete `RoutePoint`s.
 - `HealthKitService` maps between `WorkoutType` (running/cycling/swimming only) and `HKWorkoutActivityType`. If you add a new workout type, update `WorkoutType`, `HealthKitService.hkActivityType(for:)`, and the `switch` in `SyncCoordinator.mapWorkout`.

@@ -45,25 +45,30 @@ extension Double {
     var formattedElevation: String {
         String(format: "%.0f m", self)
     }
+
+    var formattedCadence: String {
+        String(format: "%.0f spm", self)
+    }
+
+    var formattedGroundContact: String {
+        String(format: "%.0f ms", self)
+    }
+
+    var formattedStride: String {
+        String(format: "%.2f m", self)
+    }
+
+    var formattedVerticalOscillation: String {
+        String(format: "%.1f cm", self)
+    }
+
+    var formattedPower: String {
+        String(format: "%.0f W", self)
+    }
 }
 
 extension Date {
     var shortFormatted: String {
-        let formatter = DateFormatter()
-        formatter.dateStyle = .medium
-        formatter.timeStyle = .short
-        return formatter.string(from: self)
-    }
-
-    var dayFormatted: String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "EEE, MMM d"
-        return formatter.string(from: self)
-    }
-
-    var timeFormatted: String {
-        let formatter = DateFormatter()
-        formatter.timeStyle = .short
-        return formatter.string(from: self)
+        formatted(date: .abbreviated, time: .shortened)
     }
 }

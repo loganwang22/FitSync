@@ -1,6 +1,5 @@
 import Foundation
 import SwiftData
-import HealthKit
 
 @Model
 final class Workout {
@@ -12,8 +11,6 @@ final class Workout {
     var durationSeconds: Double
     var distanceMeters: Double?
     var activeEnergyKcal: Double?
-    var avgHeartRate: Double?
-    var maxHeartRate: Double?
     var avgPaceSecondsPerKm: Double?
     var avgSpeedMps: Double?
     var elevationGainMeters: Double?
@@ -27,22 +24,6 @@ final class Workout {
     var type: WorkoutType {
         get { WorkoutType(rawValue: typeRawValue) ?? .running }
         set { typeRawValue = newValue.rawValue }
-    }
-
-    var distance: Measurement<UnitLength>? {
-        guard let distanceMeters else { return nil }
-        return Measurement(value: distanceMeters, unit: .meters)
-    }
-
-    var duration: TimeInterval {
-        durationSeconds
-    }
-
-    var formattedPace: String? {
-        guard let avgPaceSecondsPerKm, avgPaceSecondsPerKm > 0 else { return nil }
-        let minutes = Int(avgPaceSecondsPerKm) / 60
-        let seconds = Int(avgPaceSecondsPerKm) % 60
-        return String(format: "%d'%02d\"", minutes, seconds)
     }
 
     /// Route points in chronological order. SwiftData relationships have no
@@ -61,8 +42,6 @@ final class Workout {
         durationSeconds: Double,
         distanceMeters: Double? = nil,
         activeEnergyKcal: Double? = nil,
-        avgHeartRate: Double? = nil,
-        maxHeartRate: Double? = nil,
         avgPaceSecondsPerKm: Double? = nil,
         avgSpeedMps: Double? = nil,
         elevationGainMeters: Double? = nil,
@@ -77,8 +56,6 @@ final class Workout {
         self.durationSeconds = durationSeconds
         self.distanceMeters = distanceMeters
         self.activeEnergyKcal = activeEnergyKcal
-        self.avgHeartRate = avgHeartRate
-        self.maxHeartRate = maxHeartRate
         self.avgPaceSecondsPerKm = avgPaceSecondsPerKm
         self.avgSpeedMps = avgSpeedMps
         self.elevationGainMeters = elevationGainMeters

@@ -1,4 +1,4 @@
-import Foundation
+import SwiftUI
 
 enum WorkoutType: Int, Codable, CaseIterable, Identifiable {
     case running = 1
@@ -23,10 +23,11 @@ enum WorkoutType: Int, Codable, CaseIterable, Identifiable {
         }
     }
 
-    var unit: String {
+    var color: Color {
         switch self {
-        case .running, .cycling: "km"
-        case .swimming: "m"
+        case .running: .runningColor
+        case .cycling: .cyclingColor
+        case .swimming: .swimmingColor
         }
     }
 }

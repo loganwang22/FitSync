@@ -102,19 +102,19 @@ struct WorkoutStatsGrid: View {
                     StatCard(title: "Max HR", value: maxHR.formattedHeartRate, icon: "heart.fill")
                 }
                 if let cadence = viewModel.avgCadenceSpm {
-                    StatCard(title: "Cadence", value: String(format: "%.0f spm", cadence), icon: "metronome")
+                    StatCard(title: "Cadence", value: cadence.formattedCadence, icon: "metronome")
                 }
                 if let gct = viewModel.avgGroundContactTimeMs {
-                    StatCard(title: "Ground Contact", value: String(format: "%.0f ms", gct), icon: "shoeprints.fill")
+                    StatCard(title: "Ground Contact", value: gct.formattedGroundContact, icon: "shoeprints.fill")
                 }
                 if let stride = viewModel.avgStrideLengthMeters {
-                    StatCard(title: "Stride", value: String(format: "%.2f m", stride), icon: "ruler")
+                    StatCard(title: "Stride", value: stride.formattedStride, icon: "ruler")
                 }
                 if let vertical = viewModel.avgVerticalOscillationCm {
-                    StatCard(title: "Vert. Oscillation", value: String(format: "%.1f cm", vertical), icon: "arrow.up.and.down")
+                    StatCard(title: "Vert. Oscillation", value: vertical.formattedVerticalOscillation, icon: "arrow.up.and.down")
                 }
                 if let power = viewModel.avgRunningPowerWatts {
-                    StatCard(title: "Power", value: String(format: "%.0f W", power), icon: "bolt.fill")
+                    StatCard(title: "Power", value: power.formattedPower, icon: "bolt.fill")
                 }
             }
 

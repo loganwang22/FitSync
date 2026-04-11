@@ -10,7 +10,6 @@ final class SyncCoordinator {
 
     var isSyncing = false
     var lastSyncDate: Date?
-    var syncError: String?
 
     init(healthKit: HealthKitService, repository: WorkoutRepository, historicalMonths: Int = 12) {
         self.healthKit = healthKit
@@ -22,7 +21,6 @@ final class SyncCoordinator {
     func performSync() async {
         guard !isSyncing else { return }
         isSyncing = true
-        syncError = nil
         defer { isSyncing = false }
 
         do {
@@ -62,7 +60,8 @@ final class SyncCoordinator {
             try repository.save()
             lastSyncDate = .now
         } catch {
-            syncError = error.localizedDescription
+            // Sync failures are transient — next pull retries from the same
+            // `lastSyncDate` window. We intentionally don't surface a banner.
         }
     }
 

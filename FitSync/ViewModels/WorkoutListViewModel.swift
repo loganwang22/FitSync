@@ -23,10 +23,6 @@ final class WorkoutListViewModel {
         workouts = repository.fetchWorkouts(type: selectedType)
     }
 
-    func refresh() {
-        workouts = repository.fetchWorkouts(type: selectedType)
-    }
-
     func filterBy(_ type: WorkoutType?) {
         selectedType = type
         workouts = repository.fetchWorkouts(type: selectedType)

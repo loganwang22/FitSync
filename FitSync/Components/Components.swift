@@ -9,7 +9,7 @@ struct WorkoutIcon: View {
             .font(.system(size: size * 0.5))
             .foregroundStyle(.white)
             .frame(width: size, height: size)
-            .background(Color.forWorkoutType(type))
+            .background(type.color)
             .clipShape(RoundedRectangle(cornerRadius: size * 0.25))
     }
 }

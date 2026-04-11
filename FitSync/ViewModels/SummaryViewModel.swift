@@ -3,6 +3,7 @@ import Foundation
 @Observable
 final class SummaryViewModel {
     private let repository: WorkoutRepository
+    private let calendar = Calendar.current
 
     var selectedRange: DateRange = .week
     var selectedDate: Date = .now
@@ -14,13 +15,7 @@ final class SummaryViewModel {
     }
 
     var canGoForward: Bool {
-        let calendar = Calendar.current
-        let component: Calendar.Component
-        switch selectedRange {
-        case .week: component = .weekOfYear
-        case .month: component = .month
-        case .year: component = .year
-        }
+        let component = selectedRange.calendarComponent
         guard let current = calendar.dateInterval(of: component, for: .now),
               let selected = calendar.dateInterval(of: component, for: selectedDate) else {
             return false
@@ -29,27 +24,17 @@ final class SummaryViewModel {
     }
 
     var periodLabel: String {
-        let calendar = Calendar.current
-        let interval = selectedRange.interval(from: selectedDate)
-        let start = interval.start
-
+        let start = selectedRange.interval(from: selectedDate).start
         switch selectedRange {
         case .week:
             let end = calendar.date(byAdding: .day, value: 6, to: start) ?? start
-            let fmt = DateFormatter()
-            fmt.dateFormat = "MMM d"
-            let startStr = fmt.string(from: start)
-            fmt.dateFormat = "d, yyyy"
-            let endStr = fmt.string(from: end)
+            let startStr = start.formatted(.dateTime.month(.abbreviated).day())
+            let endStr = end.formatted(.dateTime.day().year())
             return "\(startStr)–\(endStr)"
         case .month:
-            let fmt = DateFormatter()
-            fmt.dateFormat = "MMMM yyyy"
-            return fmt.string(from: start)
+            return start.formatted(.dateTime.month(.wide).year())
         case .year:
-            let fmt = DateFormatter()
-            fmt.dateFormat = "yyyy"
-            return fmt.string(from: start)
+            return start.formatted(.dateTime.year())
         }
     }
 
@@ -67,29 +52,20 @@ final class SummaryViewModel {
     }
 
     func goBack() {
-        let calendar = Calendar.current
-        switch selectedRange {
-        case .week:
-            selectedDate = calendar.date(byAdding: .weekOfYear, value: -1, to: selectedDate) ?? selectedDate
-        case .month:
-            selectedDate = calendar.date(byAdding: .month, value: -1, to: selectedDate) ?? selectedDate
-        case .year:
-            selectedDate = calendar.date(byAdding: .year, value: -1, to: selectedDate) ?? selectedDate
-        }
-        load()
+        shiftSelectedDate(by: -1)
     }
 
     func goForward() {
         guard canGoForward else { return }
-        let calendar = Calendar.current
-        switch selectedRange {
-        case .week:
-            selectedDate = calendar.date(byAdding: .weekOfYear, value: 1, to: selectedDate) ?? selectedDate
-        case .month:
-            selectedDate = calendar.date(byAdding: .month, value: 1, to: selectedDate) ?? selectedDate
-        case .year:
-            selectedDate = calendar.date(byAdding: .year, value: 1, to: selectedDate) ?? selectedDate
-        }
+        shiftSelectedDate(by: 1)
+    }
+
+    private func shiftSelectedDate(by value: Int) {
+        selectedDate = calendar.date(
+            byAdding: selectedRange.calendarComponent,
+            value: value,
+            to: selectedDate
+        ) ?? selectedDate
         load()
     }
 }

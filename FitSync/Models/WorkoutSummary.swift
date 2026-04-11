@@ -9,7 +9,6 @@ struct WorkoutSummary: Identifiable {
     let totalCalories: Double
     let workoutCount: Int
     let avgPaceSecondsPerKm: Double?
-    let avgHeartRate: Double?
     let totalElevationGainMeters: Double
 
     var totalDistanceKm: Double {
@@ -49,15 +48,17 @@ enum DateRange: String, CaseIterable, Identifiable {
 
     var id: String { rawValue }
 
+    var calendarComponent: Calendar.Component {
+        switch self {
+        case .week: .weekOfYear
+        case .month: .month
+        case .year: .year
+        }
+    }
+
     func interval(from date: Date = .now) -> (start: Date, end: Date) {
         let calendar = Calendar.current
-        let component: Calendar.Component
-        switch self {
-        case .week: component = .weekOfYear
-        case .month: component = .month
-        case .year: component = .year
-        }
-        guard let di = calendar.dateInterval(of: component, for: date) else {
+        guard let di = calendar.dateInterval(of: calendarComponent, for: date) else {
             return (date, date)
         }
         let end = min(di.end, Date.now)
