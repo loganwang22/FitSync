@@ -55,6 +55,15 @@ struct FitSyncApp: App {
                     }
                 }
             }
+            .task {
+                // Re-request HealthKit authorization on every launch so that any
+                // newly added read types (e.g. running stride length, step count)
+                // get prompted for on existing installs. This is a no-op for types
+                // the user has already decided on.
+                if hasCompletedOnboarding {
+                    try? await healthKit.requestAuthorization()
+                }
+            }
             .onChange(of: hasCompletedOnboarding) {
                 if hasCompletedOnboarding, syncCoordinator == nil, let repository {
                     syncCoordinator = SyncCoordinator(

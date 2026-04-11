@@ -41,6 +41,10 @@ extension Double {
         let kmh = self * 3.6
         return String(format: "%.1f km/h", kmh)
     }
+
+    var formattedElevation: String {
+        String(format: "%.0f m", self)
+    }
 }
 
 extension Date {

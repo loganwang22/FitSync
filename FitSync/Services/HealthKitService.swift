@@ -14,6 +14,11 @@ final class HealthKitService {
             HKQuantityType(.distanceCycling),
             HKQuantityType(.distanceSwimming),
             HKQuantityType(.swimmingStrokeCount),
+            HKQuantityType(.stepCount),
+            HKQuantityType(.runningGroundContactTime),
+            HKQuantityType(.runningStrideLength),
+            HKQuantityType(.runningVerticalOscillation),
+            HKQuantityType(.runningPower),
         ]
         types.insert(HKSeriesType.workoutRoute())
         return types

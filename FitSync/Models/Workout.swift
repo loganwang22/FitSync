@@ -16,6 +16,7 @@ final class Workout {
     var maxHeartRate: Double?
     var avgPaceSecondsPerKm: Double?
     var avgSpeedMps: Double?
+    var elevationGainMeters: Double?
     var strokeCount: Int?
     var laps: Int?
     var sourceName: String?
@@ -44,6 +45,14 @@ final class Workout {
         return String(format: "%d'%02d\"", minutes, seconds)
     }
 
+    /// Route points in chronological order. SwiftData relationships have no
+    /// guaranteed ordering, so anything that draws a path (map polyline,
+    /// elevation chart) MUST go through this accessor — otherwise MapPolyline
+    /// will connect points in arbitrary order and produce a tangled shape.
+    var sortedRoutePoints: [RoutePoint] {
+        routePoints.sorted { $0.timestamp < $1.timestamp }
+    }
+
     init(
         healthKitUUID: String,
         type: WorkoutType,
@@ -56,6 +65,7 @@ final class Workout {
         maxHeartRate: Double? = nil,
         avgPaceSecondsPerKm: Double? = nil,
         avgSpeedMps: Double? = nil,
+        elevationGainMeters: Double? = nil,
         strokeCount: Int? = nil,
         laps: Int? = nil,
         sourceName: String? = nil
@@ -71,6 +81,7 @@ final class Workout {
         self.maxHeartRate = maxHeartRate
         self.avgPaceSecondsPerKm = avgPaceSecondsPerKm
         self.avgSpeedMps = avgSpeedMps
+        self.elevationGainMeters = elevationGainMeters
         self.strokeCount = strokeCount
         self.laps = laps
         self.sourceName = sourceName

@@ -10,9 +10,18 @@ struct WorkoutSummary: Identifiable {
     let workoutCount: Int
     let avgPaceSecondsPerKm: Double?
     let avgHeartRate: Double?
+    let totalElevationGainMeters: Double
 
     var totalDistanceKm: Double {
         totalDistanceMeters / 1000.0
+    }
+
+    var hasElevation: Bool {
+        totalElevationGainMeters > 0
+    }
+
+    var formattedElevationGain: String {
+        String(format: "%.0f m", totalElevationGainMeters)
     }
 
     var formattedDistance: String {

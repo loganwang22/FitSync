@@ -53,6 +53,9 @@ struct SummaryDashboardView: View {
                                 MetricCard(title: "Distance", value: summary.formattedDistance, icon: "arrow.left.and.right", color: .blue)
                                 MetricCard(title: "Duration", value: summary.formattedDuration, icon: "clock.fill", color: .green)
                                 MetricCard(title: "Calories", value: summary.formattedCalories, icon: "bolt.fill", color: .orange)
+                                if summary.hasElevation {
+                                    MetricCard(title: "Ascent", value: summary.formattedElevationGain, icon: "arrow.up.right", color: .purple)
+                                }
                             }
                         }
                         .padding(.horizontal)
@@ -126,12 +129,17 @@ private struct SportSummaryRow: View {
                     .foregroundStyle(.secondary)
             }
             Spacer()
-            VStack(alignment: .trailing) {
+            VStack(alignment: .trailing, spacing: 2) {
                 Text(summary.formattedDistance)
                     .font(.subheadline.bold())
                 Text(summary.formattedDuration)
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                if summary.hasElevation {
+                    Label(summary.formattedElevationGain, systemImage: "arrow.up.right")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
         }
         .padding()

@@ -73,6 +73,7 @@ final class WorkoutRepository {
         let totalCalories = workouts.compactMap(\.activeEnergyKcal).reduce(0, +)
         let heartRates = workouts.compactMap(\.avgHeartRate)
         let avgHR = heartRates.isEmpty ? nil : heartRates.reduce(0, +) / Double(heartRates.count)
+        let totalElevationGain = workouts.compactMap(\.elevationGainMeters).reduce(0, +)
 
         var avgPace: Double? = nil
         if type == .running || type == nil {
@@ -90,7 +91,8 @@ final class WorkoutRepository {
             totalCalories: totalCalories,
             workoutCount: workouts.count,
             avgPaceSecondsPerKm: avgPace,
-            avgHeartRate: avgHR
+            avgHeartRate: avgHR,
+            totalElevationGainMeters: totalElevationGain
         )
     }
 
