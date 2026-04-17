@@ -3,7 +3,7 @@ import SwiftData
 
 @Observable
 final class WorkoutListViewModel {
-    private let repository: WorkoutRepository
+    let repository: WorkoutRepository
     private let syncCoordinator: SyncCoordinator
 
     var workouts: [Workout] = []

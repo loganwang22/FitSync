@@ -65,6 +65,12 @@ extension Double {
     var formattedPower: String {
         String(format: "%.0f W", self)
     }
+
+    var formattedSwimmingPace: String {
+        let minutes = Int(self) / 60
+        let seconds = Int(self) % 60
+        return String(format: "%d'%02d\" /100m", minutes, seconds)
+    }
 }
 
 extension Date {

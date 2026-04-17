@@ -2,7 +2,7 @@ import Foundation
 
 @Observable
 final class SummaryViewModel {
-    private let repository: WorkoutRepository
+    let repository: WorkoutRepository
     private let calendar = Calendar.current
 
     var selectedRange: DateRange = .week
@@ -29,7 +29,7 @@ final class SummaryViewModel {
         case .week:
             let end = calendar.date(byAdding: .day, value: 6, to: start) ?? start
             let startStr = start.formatted(.dateTime.month(.abbreviated).day())
-            let endStr = end.formatted(.dateTime.day().year())
+            let endStr = end.formatted(.dateTime.month(.abbreviated).day().year())
             return "\(startStr)–\(endStr)"
         case .month:
             return start.formatted(.dateTime.month(.wide).year())

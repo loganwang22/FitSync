@@ -31,7 +31,10 @@ struct FitSyncApp: App {
                         syncCoordinator: syncCoordinator,
                         repository: repository
                     )
-                } else if healthKitAuthorized || hasCompletedOnboarding {
+                } else if hasCompletedOnboarding {
+                    // Services still initializing — avoid flashing onboarding
+                    Color(.systemBackground)
+                } else if healthKitAuthorized {
                     DataRangeSelectionView { months in
                         historicalDataMonths = months
                         hasCompletedOnboarding = true

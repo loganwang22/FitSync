@@ -76,8 +76,18 @@ struct SummaryDashboardView: View {
 
                             ForEach(viewModel.sportSummaries) { summary in
                                 if let type = summary.workoutType {
-                                    SportSummaryRow(type: type, summary: summary)
-                                        .padding(.horizontal)
+                                    NavigationLink {
+                                        FilteredWorkoutListView(
+                                            workoutType: type,
+                                            range: viewModel.selectedRange,
+                                            date: viewModel.selectedDate,
+                                            repository: viewModel.repository
+                                        )
+                                    } label: {
+                                        SportSummaryRow(type: type, summary: summary)
+                                    }
+                                    .buttonStyle(.plain)
+                                    .padding(.horizontal)
                                 }
                             }
                         }
@@ -86,6 +96,9 @@ struct SummaryDashboardView: View {
                 .padding(.vertical)
             }
             .navigationTitle("Summary")
+            .navigationDestination(for: Workout.self) { workout in
+                WorkoutDetailView(workout: workout, repository: viewModel.repository)
+            }
             .onAppear { viewModel.load() }
         }
     }
@@ -141,6 +154,9 @@ private struct SportSummaryRow: View {
                         .foregroundStyle(.secondary)
                 }
             }
+            Image(systemName: "chevron.right")
+                .font(.caption)
+                .foregroundStyle(.tertiary)
         }
         .padding()
         .background(Color(.systemGray6))

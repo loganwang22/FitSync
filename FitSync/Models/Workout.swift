@@ -18,8 +18,40 @@ final class Workout {
     var laps: Int?
     var sourceName: String?
 
+    /// Set at sync time so views can check without faulting in the relationship.
+    var hasMap: Bool = false
+
+    // Denormalized start/end GPS coordinates for fast route matching.
+    var startLatitude: Double?
+    var startLongitude: Double?
+    var endLatitude: Double?
+    var endLongitude: Double?
+
     @Relationship(deleteRule: .cascade, inverse: \RoutePoint.workout)
     var routePoints: [RoutePoint] = []
+
+    // MARK: - Cached HealthKit detail data (lazy-populated on first detail open)
+
+    /// Non-nil once HealthKit detail data has been fetched and cached.
+    var detailCacheDate: Date?
+
+    var cachedAvgHeartRate: Double?
+    var cachedMaxHeartRate: Double?
+    var cachedAvgPowerWatts: Double?
+    var cachedMaxPowerWatts: Double?
+    var cachedAvgCadenceSpm: Double?
+    var cachedAvgGroundContactTimeMs: Double?
+    var cachedAvgStrideLengthMeters: Double?
+    var cachedAvgVerticalOscillationCm: Double?
+    var cachedAvgRunningPowerWatts: Double?
+
+    /// JSON-encoded time-series arrays for charts.
+    var cachedHeartRateSeriesData: Data?
+    var cachedPowerSeriesData: Data?
+
+    /// Cached coach analysis (JSON-encoded CoachAnalysis).
+    var cachedCoachAnalysisData: Data?
+    var cachedCoachAnalysisDate: Date?
 
     var type: WorkoutType {
         get { WorkoutType(rawValue: typeRawValue) ?? .running }
@@ -32,6 +64,43 @@ final class Workout {
     /// will connect points in arbitrary order and produce a tangled shape.
     var sortedRoutePoints: [RoutePoint] {
         routePoints.sorted { $0.timestamp < $1.timestamp }
+    }
+
+    // MARK: - Time-series codable helpers
+
+    struct CachedTimePoint: Codable {
+        let t: Double  // secondsFromStart
+        let v: Double  // value (bpm or watts)
+    }
+
+    var cachedHeartRateSeries: [CachedTimePoint]? {
+        get {
+            guard let data = cachedHeartRateSeriesData else { return nil }
+            return try? JSONDecoder().decode([CachedTimePoint].self, from: data)
+        }
+        set {
+            cachedHeartRateSeriesData = newValue.flatMap { try? JSONEncoder().encode($0) }
+        }
+    }
+
+    var cachedPowerSeries: [CachedTimePoint]? {
+        get {
+            guard let data = cachedPowerSeriesData else { return nil }
+            return try? JSONDecoder().decode([CachedTimePoint].self, from: data)
+        }
+        set {
+            cachedPowerSeriesData = newValue.flatMap { try? JSONEncoder().encode($0) }
+        }
+    }
+
+    var cachedCoachAnalysis: CoachAnalysis? {
+        get {
+            guard let data = cachedCoachAnalysisData else { return nil }
+            return try? JSONDecoder().decode(CoachAnalysis.self, from: data)
+        }
+        set {
+            cachedCoachAnalysisData = newValue.flatMap { try? JSONEncoder().encode($0) }
+        }
     }
 
     init(

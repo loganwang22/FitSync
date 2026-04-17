@@ -47,7 +47,15 @@ final class SyncCoordinator {
                 } else {
                     let workout = Self.mapWorkout(hk)
                     let locations = try? await healthKit.fetchRoute(for: hk)
-                    workout.routePoints = locations?.map { RoutePoint(from: $0) } ?? []
+                    let routePts = locations?.map { RoutePoint(from: $0) } ?? []
+                    workout.routePoints = routePts
+                    workout.hasMap = !routePts.isEmpty
+                    if let first = locations?.first, let last = locations?.last {
+                        workout.startLatitude = first.coordinate.latitude
+                        workout.startLongitude = first.coordinate.longitude
+                        workout.endLatitude = last.coordinate.latitude
+                        workout.endLongitude = last.coordinate.longitude
+                    }
                     if workout.elevationGainMeters == nil,
                        workout.type == .running || workout.type == .cycling,
                        let locations, !locations.isEmpty {
@@ -86,7 +94,7 @@ final class SyncCoordinator {
         }
 
         var avgSpeed: Double? = nil
-        if type == .cycling, let dist = distance, dist > 0 {
+        if (type == .cycling || type == .swimming), let dist = distance, dist > 0 {
             avgSpeed = dist / duration
         }
 

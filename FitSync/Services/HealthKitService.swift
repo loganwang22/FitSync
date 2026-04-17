@@ -19,6 +19,10 @@ final class HealthKitService {
             HKQuantityType(.runningStrideLength),
             HKQuantityType(.runningVerticalOscillation),
             HKQuantityType(.runningPower),
+            HKQuantityType(.cyclingPower),
+            HKQuantityType(.vo2Max),
+            HKQuantityType(.restingHeartRate),
+            HKQuantityType(.heartRateVariabilitySDNN),
         ]
         types.insert(HKSeriesType.workoutRoute())
         return types
@@ -87,6 +91,76 @@ final class HealthKitService {
                 }
             }
             store.execute(query)
+        }
+    }
+
+    // MARK: - Cardio Fitness (VO2 Max)
+
+    struct VO2MaxSample: Identifiable {
+        let id = UUID()
+        let date: Date
+        /// ml/(kg·min)
+        let value: Double
+    }
+
+    /// Fetches VO2 max samples (Apple's "Cardio Fitness" metric) from HealthKit.
+    /// Apple Watch generates these periodically after qualifying outdoor walks/runs.
+    func fetchVO2MaxSamples(from startDate: Date, to endDate: Date = .now) async throws -> [VO2MaxSample] {
+        let type = HKQuantityType(.vo2Max)
+        let unit = HKUnit(from: "ml/kg*min")
+        let predicate = HKQuery.predicateForSamples(withStart: startDate, end: endDate)
+        let descriptor = HKSampleQueryDescriptor(
+            predicates: [.quantitySample(type: type, predicate: predicate)],
+            sortDescriptors: [SortDescriptor(\.startDate)]
+        )
+        let samples = try await descriptor.result(for: store)
+        return samples.map {
+            VO2MaxSample(date: $0.startDate, value: $0.quantity.doubleValue(for: unit))
+        }
+    }
+
+    // MARK: - Resting Heart Rate
+
+    struct RestingHRSample: Identifiable {
+        let id = UUID()
+        let date: Date
+        let bpm: Double
+    }
+
+    func fetchRestingHeartRate(from startDate: Date, to endDate: Date = .now) async throws -> [RestingHRSample] {
+        let type = HKQuantityType(.restingHeartRate)
+        let unit = HKUnit.count().unitDivided(by: .minute())
+        let predicate = HKQuery.predicateForSamples(withStart: startDate, end: endDate)
+        let descriptor = HKSampleQueryDescriptor(
+            predicates: [.quantitySample(type: type, predicate: predicate)],
+            sortDescriptors: [SortDescriptor(\.startDate)]
+        )
+        let samples = try await descriptor.result(for: store)
+        return samples.map {
+            RestingHRSample(date: $0.startDate, bpm: $0.quantity.doubleValue(for: unit))
+        }
+    }
+
+    // MARK: - Heart Rate Variability (SDNN)
+
+    struct HRVSample: Identifiable {
+        let id = UUID()
+        let date: Date
+        /// SDNN in milliseconds
+        let ms: Double
+    }
+
+    func fetchHRV(from startDate: Date, to endDate: Date = .now) async throws -> [HRVSample] {
+        let type = HKQuantityType(.heartRateVariabilitySDNN)
+        let unit = HKUnit.secondUnit(with: .milli)
+        let predicate = HKQuery.predicateForSamples(withStart: startDate, end: endDate)
+        let descriptor = HKSampleQueryDescriptor(
+            predicates: [.quantitySample(type: type, predicate: predicate)],
+            sortDescriptors: [SortDescriptor(\.startDate)]
+        )
+        let samples = try await descriptor.result(for: store)
+        return samples.map {
+            HRVSample(date: $0.startDate, ms: $0.quantity.doubleValue(for: unit))
         }
     }
 

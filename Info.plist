@@ -6,5 +6,7 @@
 	<string>FitSync needs access to your Health data to display your workouts, routes, and fitness trends.</string>
 	<key>NSHealthUpdateUsageDescription</key>
 	<string>FitSync does not write any data to Health.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>FitSync needs access to save workout screenshots to your photo library.</string>
 </dict>
 </plist>

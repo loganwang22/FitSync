@@ -30,6 +30,8 @@ struct HealthKitPermissionView: View {
                 PermissionRow(icon: "figure.outdoor.cycle", text: "Cycling workouts")
                 PermissionRow(icon: "figure.pool.swim", text: "Swimming workouts")
                 PermissionRow(icon: "heart.fill", text: "Heart rate data")
+                PermissionRow(icon: "waveform.path.ecg", text: "Cardio fitness (VO2 max)")
+                PermissionRow(icon: "bed.double", text: "Resting heart rate & HRV")
                 PermissionRow(icon: "map", text: "Workout routes")
             }
             .padding(.horizontal, 48)

@@ -23,10 +23,18 @@ struct ContentView: View {
             }
 
             TrendsView(viewModel: TrendsViewModel(
-                repository: repository
+                repository: repository,
+                healthKit: healthKit
             ))
             .tabItem {
                 Label("Trends", systemImage: "chart.line.uptrend.xyaxis")
+            }
+
+            CoachTabView(viewModel: CoachViewModel(
+                repository: repository
+            ))
+            .tabItem {
+                Label("Coach", systemImage: "brain.head.profile")
             }
         }
     }

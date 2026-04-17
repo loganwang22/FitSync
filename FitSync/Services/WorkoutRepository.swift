@@ -87,6 +87,44 @@ final class WorkoutRepository {
         )
     }
 
+    // MARK: - Similar Workouts (Matched Runs)
+
+    /// Finds running workouts with a similar GPS route to the given workout.
+    /// Matches based on start/end location proximity (~200m) and distance similarity (±15%).
+    func findSimilarWorkouts(to workout: Workout) -> [Workout] {
+        guard workout.type == .running,
+              let startLat = workout.startLatitude,
+              let startLng = workout.startLongitude,
+              let endLat = workout.endLatitude,
+              let endLng = workout.endLongitude,
+              let dist = workout.distanceMeters, dist > 0 else {
+            return []
+        }
+
+        // ~200m threshold in degrees (rough: 1° lat ≈ 111km, 1° lng ≈ 85km at mid-latitudes)
+        let latThreshold = 0.002   // ~220m
+        let lngThreshold = 0.0025  // ~210m at 40° latitude
+        let distFraction = 0.15    // 15%
+
+        let allRuns = fetchWorkouts(type: .running)
+        let uuid = workout.healthKitUUID
+
+        return allRuns.filter { w in
+            guard w.healthKitUUID != uuid,
+                  let sLat = w.startLatitude, let sLng = w.startLongitude,
+                  let eLat = w.endLatitude, let eLng = w.endLongitude,
+                  let wDist = w.distanceMeters, wDist > 0 else {
+                return false
+            }
+
+            let startClose = abs(sLat - startLat) < latThreshold && abs(sLng - startLng) < lngThreshold
+            let endClose = abs(eLat - endLat) < latThreshold && abs(eLng - endLng) < lngThreshold
+            let distClose = abs(wDist - dist) / dist < distFraction
+
+            return startClose && endClose && distClose
+        }
+    }
+
     // MARK: - Time Series
 
     struct WeeklyData: Identifiable {

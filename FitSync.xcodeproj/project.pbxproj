@@ -256,6 +256,7 @@
 				CODE_SIGN_ENTITLEMENTS = FitSync/Resources/FitSync.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = T359P4YRUP;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Info.plist;
 				INFOPLIST_KEY_NSHealthShareUsageDescription = "FitSync needs access to your Health data to display your workouts, routes, and fitness trends.";
@@ -288,6 +289,7 @@
 				CODE_SIGN_ENTITLEMENTS = FitSync/Resources/FitSync.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = T359P4YRUP;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Info.plist;
 				INFOPLIST_KEY_NSHealthShareUsageDescription = "FitSync needs access to your Health data to display your workouts, routes, and fitness trends.";

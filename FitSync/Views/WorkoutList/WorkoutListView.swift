@@ -115,7 +115,7 @@ struct WorkoutListView: View {
             }
             .navigationTitle("Activity")
             .navigationDestination(for: Workout.self) { workout in
-                WorkoutDetailView(workout: workout)
+                WorkoutDetailView(workout: workout, repository: viewModel.repository)
             }
             .task {
                 await viewModel.load()
