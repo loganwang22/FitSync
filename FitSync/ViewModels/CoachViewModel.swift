@@ -6,7 +6,6 @@ import SwiftData
 @Observable
 final class CoachViewModel {
     let repository: WorkoutRepository
-    private let analyzer = WorkoutAnalyzer()
     private let planGenerator = TrainingPlanGenerator()
 
     var goal: TrainingGoal? {
@@ -33,13 +32,15 @@ final class CoachViewModel {
     // Training plan
     var trainingPlan: TrainingPlan?
 
-    // Suggestions & insights
-    var suggestedWorkouts: [CoachAnalysis.SuggestedWorkout] = []
-    var recentInsights: [(workout: Workout, summary: String)] = []
+    // Goal prediction
+    var prediction: RacePredictor.Prediction?
+    var predictionHistory: [RacePredictor.WeeklyPrediction] = []
+    var predictionBaselineAgeDays: Int?
 
     var isLoading = false
     var showGoalSheet = false
     var showSettingsSheet = false
+    var showChat = false
 
     init(repository: WorkoutRepository) {
         self.repository = repository
@@ -54,12 +55,10 @@ final class CoachViewModel {
         let sixWeeksAgo = calendar.date(byAdding: .weekOfYear, value: -6, to: now) ?? now
         let weekStart = calendar.dateInterval(of: .weekOfYear, for: now)?.start ?? now
 
-        // Fetch recent workouts
         let allRecent = repository.fetchWorkouts()
             .filter { $0.startDate >= sixWeeksAgo }
         let thisWeek = allRecent.filter { $0.startDate >= weekStart }
 
-        // Weekly load
         sessionsThisWeek = thisWeek.count
         runKmThisWeek = thisWeek
             .filter { $0.type == .running }
@@ -77,12 +76,10 @@ final class CoachViewModel {
             .map(\.durationSeconds)
             .reduce(0, +) / 60
 
-        // Generate training plan
         if let goal {
             let allWorkouts = repository.fetchWorkouts()
             trainingPlan = planGenerator.generate(from: allWorkouts, goal: goal)
 
-            // Update current week completion
             if var plan = trainingPlan, !plan.weeklyBlocks.isEmpty {
                 plan.weeklyBlocks[0].completedSessions = sessionsThisWeek
                 let target = plan.weeklyBlocks[0].targetSessions
@@ -90,25 +87,45 @@ final class CoachViewModel {
                     ? min(Double(sessionsThisWeek) / Double(target), 1.0) : 0
                 trainingPlan = plan
             }
+
+            computePrediction(goal: goal, allWorkouts: allWorkouts)
         } else {
             trainingPlan = nil
+            prediction = nil
+            predictionHistory = []
+            predictionBaselineAgeDays = nil
+        }
+    }
+
+    private func computePrediction(goal: TrainingGoal, allWorkouts: [Workout]) {
+        guard let targetKm = goal.predictedRunDistanceKm else {
+            prediction = nil
+            predictionHistory = []
+            predictionBaselineAgeDays = nil
+            return
         }
 
-        // Suggestions from analyzer (based on most recent workout)
-        if let latest = allRecent.first {
-            let analysis = analyzer.analyze(
-                workout: latest,
-                recentWorkouts: allRecent,
-                goal: goal
-            )
-            suggestedWorkouts = analysis.suggestedWorkouts
+        let now = Date.now
+        let sixWeeksAgo = Calendar.current.date(byAdding: .weekOfYear, value: -6, to: now) ?? now
+        let baselineWindow = DateInterval(start: sixWeeksAgo, end: now)
+
+        if let baseline = RacePredictor.baseline(from: allWorkouts, within: baselineWindow) {
+            let secs = RacePredictor.predict(baseline: baseline, targetKm: targetKm)
+            prediction = .init(targetDistanceKm: targetKm, predictedSeconds: secs, baseline: baseline)
+            predictionBaselineAgeDays = Calendar.current.dateComponents(
+                [.day], from: baseline.workout.startDate, to: now
+            ).day
+        } else {
+            prediction = nil
+            predictionBaselineAgeDays = nil
         }
 
-        // Recent insights from cached analyses
-        recentInsights = allRecent.prefix(5).compactMap { workout in
-            guard let analysis = workout.cachedCoachAnalysis,
-                  let firstObs = analysis.observations.first else { return nil }
-            return (workout: workout, summary: firstObs.title)
-        }
+        predictionHistory = RacePredictor.weeklyHistory(
+            workouts: allWorkouts,
+            targetKm: targetKm,
+            weeks: 10,
+            smoothingWeeks: 3,
+            from: now
+        )
     }
 }

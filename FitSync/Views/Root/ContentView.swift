@@ -30,9 +30,10 @@ struct ContentView: View {
                 Label("Trends", systemImage: "chart.line.uptrend.xyaxis")
             }
 
-            CoachTabView(viewModel: CoachViewModel(
-                repository: repository
-            ))
+            CoachTabView(
+                viewModel: CoachViewModel(repository: repository),
+                healthKit: healthKit
+            )
             .tabItem {
                 Label("Coach", systemImage: "brain.head.profile")
             }

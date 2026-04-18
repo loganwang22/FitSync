@@ -89,24 +89,91 @@ final class WorkoutRepository {
 
     // MARK: - Similar Workouts (Matched Runs)
 
+    /// Bump when similarity thresholds or the match formula change so
+    /// previously-written caches are discarded on the next scan.
+    private static let similarityCriteriaVersion = 2
+
     /// Finds running workouts with a similar GPS route to the given workout.
     /// Matches based on start/end location proximity (~200m) and distance similarity (±15%).
-    func findSimilarWorkouts(to workout: Workout) -> [Workout] {
+    ///
+    /// Results are cached on the workout and only recomputed when a newer
+    /// running workout has been synced since the last computation.
+    ///
+    /// Async because a cold-cache scan faults in `sortedRoutePoints` for every
+    /// historical run missing denormalized start/end coords — that's tens to
+    /// hundreds of synchronous SwiftData relationship loads on the main actor
+    /// and will freeze the UI. The backfill yields between items so the main
+    /// thread can render.
+    @MainActor
+    func findSimilarWorkouts(to workout: Workout) async -> [Workout] {
         guard workout.type == .running,
-              let startLat = workout.startLatitude,
-              let startLng = workout.startLongitude,
-              let endLat = workout.endLatitude,
-              let endLng = workout.endLongitude,
               let dist = workout.distanceMeters, dist > 0 else {
             return []
         }
 
-        // ~200m threshold in degrees (rough: 1° lat ≈ 111km, 1° lng ≈ 85km at mid-latitudes)
-        let latThreshold = 0.002   // ~220m
-        let lngThreshold = 0.0025  // ~210m at 40° latitude
-        let distFraction = 0.15    // 15%
-
         let allRuns = fetchWorkouts(type: .running)
+        let latestRunDate = allRuns.map(\.startDate).max()
+
+        // Fast path: cache hit with the current criteria version and no newer
+        // run synced since. Skips the expensive backfill entirely.
+        if workout.cachedSimilarCriteriaVersion == Self.similarityCriteriaVersion,
+           let cached = workout.cachedSimilarUUIDs,
+           let cachedAsOf = workout.cachedSimilarLatestRunDate,
+           let latest = latestRunDate,
+           cachedAsOf >= latest {
+            let uuidSet = Set(cached)
+            return allRuns
+                .filter { uuidSet.contains($0.healthKitUUID) }
+                .sorted { $0.startDate > $1.startDate }
+        }
+
+        // Slow path: populate denormalized coords for any historical run that
+        // pre-dates these fields, yielding to keep the UI responsive.
+        await backfillStartEndCoordinates(for: allRuns)
+
+        // The current workout itself may have been missing coords until we
+        // just ran the backfill, so check after.
+        guard workout.startLatitude != nil, workout.startLongitude != nil,
+              workout.endLatitude != nil, workout.endLongitude != nil else {
+            return []
+        }
+
+        let matches = computeSimilarWorkouts(to: workout, from: allRuns)
+        workout.cachedSimilarUUIDs = matches.map(\.healthKitUUID)
+        workout.cachedSimilarLatestRunDate = latestRunDate
+        workout.cachedSimilarCriteriaVersion = Self.similarityCriteriaVersion
+        return matches.sorted { $0.startDate > $1.startDate }
+    }
+
+    @MainActor
+    private func backfillStartEndCoordinates(for runs: [Workout]) async {
+        var counter = 0
+        for w in runs where w.startLatitude == nil || w.endLatitude == nil {
+            let pts = w.sortedRoutePoints
+            if let first = pts.first, let last = pts.last {
+                w.startLatitude = first.latitude
+                w.startLongitude = first.longitude
+                w.endLatitude = last.latitude
+                w.endLongitude = last.longitude
+            }
+            counter += 1
+            if counter % 5 == 0 {
+                await Task.yield()
+            }
+        }
+    }
+
+    private func computeSimilarWorkouts(to workout: Workout, from allRuns: [Workout]) -> [Workout] {
+        guard let startLat = workout.startLatitude,
+              let startLng = workout.startLongitude,
+              let endLat = workout.endLatitude,
+              let endLng = workout.endLongitude,
+              let dist = workout.distanceMeters, dist > 0 else { return [] }
+
+        // ~200m threshold in degrees (rough: 1° lat ≈ 111km, 1° lng ≈ 85km at mid-latitudes)
+        let latThreshold = 0.002
+        let lngThreshold = 0.0025
+        let distFraction = 0.15
         let uuid = workout.healthKitUUID
 
         return allRuns.filter { w in

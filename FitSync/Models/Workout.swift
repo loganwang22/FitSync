@@ -53,6 +53,17 @@ final class Workout {
     var cachedCoachAnalysisData: Data?
     var cachedCoachAnalysisDate: Date?
 
+    /// Cached list of similar-run UUIDs (JSON-encoded [String]). Populated lazily
+    /// the first time `findSimilarWorkouts` is called; stable unless a newer
+    /// running workout is synced (which invalidates the cache).
+    var cachedSimilarUUIDsData: Data?
+    /// The max startDate across all running workouts at the time the cache
+    /// was written. Cache is valid while no newer running workout exists.
+    var cachedSimilarLatestRunDate: Date?
+    /// Bump when similarity criteria change (thresholds, formula) to
+    /// invalidate all existing caches on next scan.
+    var cachedSimilarCriteriaVersion: Int?
+
     var type: WorkoutType {
         get { WorkoutType(rawValue: typeRawValue) ?? .running }
         set { typeRawValue = newValue.rawValue }
@@ -90,6 +101,16 @@ final class Workout {
         }
         set {
             cachedPowerSeriesData = newValue.flatMap { try? JSONEncoder().encode($0) }
+        }
+    }
+
+    var cachedSimilarUUIDs: [String]? {
+        get {
+            guard let data = cachedSimilarUUIDsData else { return nil }
+            return try? JSONDecoder().decode([String].self, from: data)
+        }
+        set {
+            cachedSimilarUUIDsData = newValue.flatMap { try? JSONEncoder().encode($0) }
         }
     }
 

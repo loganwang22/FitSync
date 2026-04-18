@@ -6,6 +6,7 @@ struct FitSyncApp: App {
     @State private var healthKit = HealthKitService()
     @State private var syncCoordinator: SyncCoordinator?
     @State private var repository: WorkoutRepository?
+    @State private var coachTaskManager = CoachTaskManager()
 
     let container: ModelContainer
 
@@ -31,6 +32,7 @@ struct FitSyncApp: App {
                         syncCoordinator: syncCoordinator,
                         repository: repository
                     )
+                    .environment(coachTaskManager)
                 } else if hasCompletedOnboarding {
                     // Services still initializing — avoid flashing onboarding
                     Color(.systemBackground)

@@ -3,107 +3,252 @@ import SwiftUI
 struct WorkoutAnalysisSection: View {
     let workout: Workout
     let repository: WorkoutRepository
+    @Environment(CoachTaskManager.self) private var coachTaskManager
     @State private var analysis: CoachAnalysis?
-    @State private var isLoading = false
+    @State private var followUps: [FollowUp] = []
+    @State private var followUpInput: String = ""
+    @State private var isAsking = false
+    @State private var errorMessage: String?
+    @State private var showSettingsSheet = false
+    @FocusState private var followUpFocused: Bool
+
+    struct FollowUp: Identifiable {
+        let id = UUID()
+        let question: String
+        var answer: String?
+    }
+
+    private var isEnhancing: Bool {
+        coachTaskManager.isEnhancing(workout.healthKitUUID)
+    }
+
+    private var hasAPIKey: Bool {
+        AICoachService.hasAPIKey
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             HStack {
                 Image(systemName: "sparkles")
                     .foregroundStyle(Color.accentColor)
-                Text("Coach")
+                Text("AI Coach")
                     .font(.headline)
                 Spacer()
-                if isLoading {
-                    ProgressView()
-                        .controlSize(.small)
+                if isEnhancing {
+                    ProgressView().controlSize(.small)
                 }
             }
 
-            if let analysis {
-                // Observations
-                if !analysis.observations.isEmpty {
-                    VStack(alignment: .leading, spacing: 8) {
-                        ForEach(analysis.observations) { obs in
-                            observationRow(obs)
-                        }
-                    }
-                }
+            if !hasAPIKey {
+                noAPIKeyState
+            } else if let analysis {
+                analysisContent(analysis)
+            } else if isEnhancing {
+                Text("Analyzing workout…")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            } else {
+                generateButton
+            }
 
-                // Recommendations
-                if !analysis.recommendations.isEmpty {
-                    Divider()
-                    VStack(alignment: .leading, spacing: 8) {
-                        ForEach(analysis.recommendations) { rec in
-                            recommendationRow(rec)
-                        }
-                    }
-                }
-
-                // Suggested next workouts
-                if !analysis.suggestedWorkouts.isEmpty {
-                    Divider()
-                    Text("Suggested Next")
-                        .font(.subheadline.bold())
-                    ForEach(analysis.suggestedWorkouts) { suggestion in
-                        suggestedRow(suggestion)
-                    }
-                }
-
-                // AI enhancement button
-                if analysis.source == .onDevice && AICoachService.hasAPIKey {
-                    Divider()
-                    Button {
-                        Task { await enhanceWithAI() }
-                    } label: {
-                        Label("Enhance with AI", systemImage: "brain")
-                            .font(.subheadline)
-                    }
-                }
+            if let errorMessage {
+                Text(errorMessage)
+                    .font(.caption)
+                    .foregroundStyle(.red)
             }
         }
         .padding()
         .background(Color(.systemGray6))
         .clipShape(RoundedRectangle(cornerRadius: 12))
-        .task { await loadAnalysis() }
+        .task { await loadCached() }
+        .onChange(of: coachTaskManager.inProgress) { old, new in
+            let uuid = workout.healthKitUUID
+            if old.contains(uuid) && !new.contains(uuid) {
+                if let updated = workout.cachedCoachAnalysis {
+                    analysis = updated
+                }
+                errorMessage = coachTaskManager.lastError(for: uuid)
+            }
+        }
+        .sheet(isPresented: $showSettingsSheet) {
+            CoachSettingsSheet()
+        }
+    }
+
+    // MARK: - States
+
+    private var noAPIKeyState: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Set up an API key to get AI analysis of this workout and ask follow-up questions.")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+            Button {
+                showSettingsSheet = true
+            } label: {
+                Label("Configure AI Coach", systemImage: "gearshape")
+                    .font(.subheadline)
+            }
+        }
+    }
+
+    private var generateButton: some View {
+        Button {
+            enhanceWithAI()
+        } label: {
+            Label("Generate AI Analysis", systemImage: "brain")
+                .font(.subheadline)
+        }
+        .disabled(isEnhancing)
+    }
+
+    @ViewBuilder
+    private func analysisContent(_ analysis: CoachAnalysis) -> some View {
+        if !analysis.observations.isEmpty {
+            VStack(alignment: .leading, spacing: 8) {
+                ForEach(analysis.observations) { obs in
+                    observationRow(obs)
+                }
+            }
+        }
+
+        if !analysis.recommendations.isEmpty {
+            Divider()
+            VStack(alignment: .leading, spacing: 8) {
+                ForEach(analysis.recommendations) { rec in
+                    recommendationRow(rec)
+                }
+            }
+        }
+
+        if !analysis.suggestedWorkouts.isEmpty {
+            Divider()
+            Text("Suggested Next")
+                .font(.subheadline.bold())
+            ForEach(analysis.suggestedWorkouts) { suggestion in
+                suggestedRow(suggestion)
+            }
+        }
+
+        Divider()
+        HStack {
+            Button {
+                enhanceWithAI()
+            } label: {
+                Label("Regenerate", systemImage: "arrow.clockwise")
+                    .font(.caption)
+            }
+            .disabled(isEnhancing)
+            Spacer()
+            Text("Generated \(analysis.generatedDate.shortFormatted)")
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
+        }
+
+        Divider()
+        followUpSection
     }
 
     // MARK: - Loading
 
     @MainActor
-    private func loadAnalysis() async {
-        // Check cache
-        if let cached = workout.cachedCoachAnalysis,
-           let cacheDate = workout.cachedCoachAnalysisDate,
-           cacheDate.timeIntervalSinceNow > -86400 { // 24h
+    private func loadCached() async {
+        errorMessage = coachTaskManager.lastError(for: workout.healthKitUUID)
+        if let cached = workout.cachedCoachAnalysis {
             analysis = cached
-            return
         }
+    }
 
-        isLoading = true
+    private func enhanceWithAI() {
+        errorMessage = nil
         let recentWorkouts = repository.fetchWorkouts(limit: 20)
         let goal: TrainingGoal? = {
             guard let raw = UserDefaults.standard.object(forKey: "trainingGoalRawValue") as? Int else { return nil }
             return TrainingGoal(rawValue: raw)
         }()
 
-        let analyzer = WorkoutAnalyzer()
-        let result = analyzer.analyze(
+        coachTaskManager.enhance(
             workout: workout,
             recentWorkouts: recentWorkouts,
             goal: goal
         )
+    }
 
-        workout.cachedCoachAnalysis = result
-        workout.cachedCoachAnalysisDate = .now
-        analysis = result
-        isLoading = false
+    // MARK: - Follow-up Q&A
+
+    private var followUpSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Image(systemName: "bubble.left.and.bubble.right")
+                    .foregroundStyle(Color.accentColor)
+                Text("Ask more")
+                    .font(.subheadline.bold())
+                Spacer()
+            }
+
+            ForEach(followUps) { qa in
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(qa.question)
+                        .font(.subheadline)
+                        .padding(10)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(Color.accentColor.opacity(0.12))
+                        .clipShape(RoundedRectangle(cornerRadius: 10))
+
+                    if let answer = qa.answer {
+                        Text(answer)
+                            .font(.subheadline)
+                            .foregroundStyle(.primary)
+                            .padding(10)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(Color(.systemBackground))
+                            .clipShape(RoundedRectangle(cornerRadius: 10))
+                    } else {
+                        HStack(spacing: 6) {
+                            ProgressView().controlSize(.small)
+                            Text("Thinking…").font(.caption).foregroundStyle(.secondary)
+                        }
+                        .padding(10)
+                    }
+                }
+            }
+
+            HStack(spacing: 8) {
+                TextField("Ask a follow-up question…", text: $followUpInput, axis: .vertical)
+                    .textFieldStyle(.roundedBorder)
+                    .lineLimit(1...4)
+                    .focused($followUpFocused)
+                    .disabled(isAsking)
+                    .onSubmit { Task { await submitFollowUp() } }
+
+                Button {
+                    Task { await submitFollowUp() }
+                } label: {
+                    Image(systemName: "arrow.up.circle.fill")
+                        .font(.title2)
+                        .foregroundStyle(canSubmit ? Color.accentColor : Color.secondary)
+                }
+                .disabled(!canSubmit)
+            }
+        }
+    }
+
+    private var canSubmit: Bool {
+        !isAsking && !followUpInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     @MainActor
-    private func enhanceWithAI() async {
-        guard let baseAnalysis = analysis else { return }
-        isLoading = true
+    private func submitFollowUp() async {
+        let question = followUpInput.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !question.isEmpty, !isAsking, let priorAnalysis = analysis else { return }
+
+        followUpInput = ""
+        followUpFocused = false
+        errorMessage = nil
+        isAsking = true
+
+        let entry = FollowUp(question: question, answer: nil)
+        followUps.append(entry)
+        let entryID = entry.id
 
         let recentWorkouts = repository.fetchWorkouts(limit: 20)
         let goal: TrainingGoal? = {
@@ -111,20 +256,27 @@ struct WorkoutAnalysisSection: View {
             return TrainingGoal(rawValue: raw)
         }()
 
+        let priorQAs: [(question: String, answer: String)] = followUps
+            .dropLast()
+            .compactMap { qa in qa.answer.map { (qa.question, $0) } }
+
         do {
-            let enhanced = try await AICoachService.shared.enhance(
+            let answer = try await AICoachService.shared.askFollowUp(
                 workout: workout,
-                baseAnalysis: baseAnalysis,
+                priorAnalysis: priorAnalysis,
+                priorQAs: priorQAs,
+                newQuestion: question,
                 recentWorkouts: recentWorkouts,
                 goal: goal
             )
-            workout.cachedCoachAnalysis = enhanced
-            workout.cachedCoachAnalysisDate = .now
-            analysis = enhanced
+            if let idx = followUps.firstIndex(where: { $0.id == entryID }) {
+                followUps[idx] = FollowUp(question: question, answer: answer.trimmingCharacters(in: .whitespacesAndNewlines))
+            }
         } catch {
-            // Keep on-device analysis on failure
+            followUps.removeAll { $0.id == entryID }
+            errorMessage = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
         }
-        isLoading = false
+        isAsking = false
     }
 
     // MARK: - Row Views

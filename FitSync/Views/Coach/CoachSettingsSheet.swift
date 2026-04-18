@@ -11,7 +11,7 @@ struct CoachSettingsSheet: View {
     var body: some View {
         NavigationStack {
             Form {
-                Section("AI Enhancement") {
+                Section("AI Coach") {
                     Toggle("Enable AI Coach", isOn: $aiEnabled)
                         .onChange(of: aiEnabled) { _, val in
                             AICoachService.isEnabled = val
@@ -57,7 +57,7 @@ struct CoachSettingsSheet: View {
                 }
 
                 Section {
-                    Text("AI enhancement sends workout metrics to the selected provider's API for deeper analysis. Your API key is stored in the device Keychain.")
+                    Text("The AI coach analyzes workouts and chats about your training. Workout metrics and training data are sent to the selected provider's API when you make a request. Your API key is stored in the device Keychain.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -89,13 +89,6 @@ struct CoachSettingsSheet: View {
         do {
             let enhanced = try await AICoachService.shared.enhance(
                 workout: makeTestWorkout(),
-                baseAnalysis: CoachAnalysis(
-                    observations: [],
-                    recommendations: [],
-                    suggestedWorkouts: [],
-                    source: .onDevice,
-                    generatedDate: .now
-                ),
                 recentWorkouts: [],
                 goal: nil
             )

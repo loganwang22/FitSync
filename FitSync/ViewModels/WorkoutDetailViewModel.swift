@@ -158,9 +158,17 @@ final class WorkoutDetailViewModel {
         // Recompute segments with GPS data + HR/power assignment
         computeSegments()
 
-        // Find similar workouts (matched runs)
+        // Find similar workouts (matched runs). Fired in its own Task so the
+        // rest of the detail view (segments, elevation) renders immediately;
+        // the similarity scan can take noticeable time on first load because
+        // it has to backfill denormalized start/end coords for historical
+        // runs by faulting in their route points.
         if workout.type == .running, let repo = repository {
-            similarWorkouts = repo.findSimilarWorkouts(to: workout)
+            Task { [weak self] in
+                guard let self else { return }
+                let matches = await repo.findSimilarWorkouts(to: self.workout)
+                self.similarWorkouts = matches
+            }
         }
     }
 

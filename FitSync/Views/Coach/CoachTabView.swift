@@ -2,6 +2,7 @@ import SwiftUI
 
 struct CoachTabView: View {
     @State var viewModel: CoachViewModel
+    let healthKit: HealthKitService
 
     var body: some View {
         NavigationStack {
@@ -9,6 +10,18 @@ struct CoachTabView: View {
                 VStack(spacing: 20) {
                     if let goal = viewModel.goal {
                         goalBadge(goal)
+
+                        chatEntrySection
+
+                        if goal.predictedRunDistanceKm != nil {
+                            PredictionSection(
+                                goal: goal,
+                                prediction: viewModel.prediction,
+                                baselineAgeDays: viewModel.predictionBaselineAgeDays,
+                                history: viewModel.predictionHistory
+                            )
+                        }
+
                         weeklyLoadSection(goal)
 
                         // Training plan
@@ -30,14 +43,7 @@ struct CoachTabView: View {
                         }
                     } else {
                         emptyGoalState
-                    }
-
-                    if !viewModel.suggestedWorkouts.isEmpty {
-                        upNextSection
-                    }
-
-                    if !viewModel.recentInsights.isEmpty {
-                        recentInsightsSection
+                        chatEntrySection
                     }
                 }
                 .padding()
@@ -58,6 +64,13 @@ struct CoachTabView: View {
                         Image(systemName: "target")
                     }
                 }
+            }
+            .navigationDestination(isPresented: $viewModel.showChat) {
+                CoachChatView(
+                    repository: viewModel.repository,
+                    healthKit: healthKit,
+                    goal: viewModel.goal
+                )
             }
             .sheet(isPresented: $viewModel.showGoalSheet) {
                 viewModel.load()
@@ -175,70 +188,40 @@ struct CoachTabView: View {
         }
     }
 
-    // MARK: - Up Next
+    // MARK: - Chat Entry
 
-    private var upNextSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Up Next")
-                .font(.headline)
-
-            ForEach(viewModel.suggestedWorkouts) { suggestion in
-                HStack(spacing: 12) {
-                    Circle()
-                        .fill(intensityColor(suggestion.intensity))
-                        .frame(width: 8, height: 8)
-
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(suggestion.name)
-                            .font(.subheadline.bold())
-                        Text(suggestion.description)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-
-                    Spacer()
-
-                    if let mins = suggestion.durationMinutes {
-                        Text("\(mins)m")
-                            .font(.caption.bold())
-                            .foregroundStyle(.secondary)
-                    }
-                }
-                .padding(.vertical, 4)
+    private var chatEntrySection: some View {
+        Button {
+            if AICoachService.hasAPIKey {
+                viewModel.showChat = true
+            } else {
+                viewModel.showSettingsSheet = true
             }
-        }
-        .padding()
-        .background(Color(.systemGray6))
-        .clipShape(RoundedRectangle(cornerRadius: 12))
-    }
-
-    // MARK: - Recent Insights
-
-    private var recentInsightsSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Recent Insights")
-                .font(.headline)
-
-            ForEach(viewModel.recentInsights, id: \.workout.healthKitUUID) { item in
-                HStack(spacing: 12) {
-                    WorkoutIcon(type: item.workout.type, size: 32)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(item.workout.type.label)
-                            .font(.subheadline.bold())
-                        Text(item.summary)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                    Spacer()
-                    Text(item.workout.startDate.shortFormatted)
-                        .font(.caption2)
-                        .foregroundStyle(.tertiary)
+        } label: {
+            HStack(spacing: 12) {
+                Image(systemName: "bubble.left.and.bubble.right.fill")
+                    .font(.title2)
+                    .foregroundStyle(Color.accentColor)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Chat with AI Coach")
+                        .font(.headline)
+                        .foregroundStyle(.primary)
+                    Text(AICoachService.hasAPIKey
+                         ? "Ask about your training — \"how did I do this week?\""
+                         : "Configure an AI provider to enable chat")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
+            .padding()
+            .background(Color(.systemGray6))
+            .clipShape(RoundedRectangle(cornerRadius: 12))
         }
-        .padding()
-        .background(Color(.systemGray6))
-        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .buttonStyle(.plain)
     }
 
     // MARK: - Empty State
@@ -267,11 +250,4 @@ struct CoachTabView: View {
         .padding(.vertical, 40)
     }
 
-    private func intensityColor(_ intensity: CoachAnalysis.SuggestedWorkout.Intensity) -> Color {
-        switch intensity {
-        case .easy: return .green
-        case .moderate: return .orange
-        case .hard: return .red
-        }
-    }
 }

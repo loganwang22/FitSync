@@ -62,7 +62,6 @@ struct CoachAnalysis: Codable {
     }
 
     enum AnalysisSource: String, Codable {
-        case onDevice
         case claude
         case kimi
     }
