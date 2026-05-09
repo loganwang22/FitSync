@@ -30,7 +30,7 @@ final class AICoachService {
     /// (model, temperature) for the current Kimi mode.
     static var kimiConfig: (model: String, temperature: Double) {
         kimiThinkingEnabled
-            ? (model: "kimi-k2.5", temperature: 1.0)
+            ? (model: "kimi-k2.6", temperature: 1.0)
             : (model: "kimi-k2-turbo-preview", temperature: 0.6)
     }
 

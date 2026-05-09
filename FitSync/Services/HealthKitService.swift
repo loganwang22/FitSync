@@ -23,6 +23,7 @@ final class HealthKitService {
             HKQuantityType(.vo2Max),
             HKQuantityType(.restingHeartRate),
             HKQuantityType(.heartRateVariabilitySDNN),
+            HKQuantityType(.bodyMass),
         ]
         types.insert(HKSeriesType.workoutRoute())
         return types
@@ -162,6 +163,22 @@ final class HealthKitService {
         return samples.map {
             HRVSample(date: $0.startDate, ms: $0.quantity.doubleValue(for: unit))
         }
+    }
+
+    // MARK: - Body Mass
+
+    /// Returns the most recent body-mass sample in kilograms, or nil if none.
+    /// Needed for power-to-weight ratio.
+    func fetchLatestBodyMassKg(asOf date: Date = .now) async throws -> Double? {
+        let type = HKQuantityType(.bodyMass)
+        let predicate = HKQuery.predicateForSamples(withStart: nil, end: date)
+        var descriptor = HKSampleQueryDescriptor(
+            predicates: [.quantitySample(type: type, predicate: predicate)],
+            sortDescriptors: [SortDescriptor(\.startDate, order: .reverse)]
+        )
+        descriptor.limit = 1
+        let samples = try await descriptor.result(for: store)
+        return samples.first?.quantity.doubleValue(for: .gramUnit(with: .kilo))
     }
 
     // MARK: - Helpers

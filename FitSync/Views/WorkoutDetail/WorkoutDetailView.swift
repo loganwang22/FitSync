@@ -40,6 +40,11 @@ struct WorkoutDetailView: View {
                             } label: {
                                 Label("Share Full Details", systemImage: "doc.richtext")
                             }
+                            Button {
+                                exportDataForAI()
+                            } label: {
+                                Label("Export Data for AI", systemImage: "text.alignleft")
+                            }
                         } label: {
                             Image(systemName: "square.and.arrow.up")
                         }
@@ -185,6 +190,36 @@ struct WorkoutDetailView: View {
         }
         isRendering = false
         presentShareSheet(image: image)
+    }
+
+    @MainActor
+    private func exportDataForAI() {
+        let text = WorkoutDataExporter.export(workout: workout, viewModel: viewModel)
+        presentShareSheet(text: text)
+    }
+
+    @MainActor
+    private func presentShareSheet(text: String) {
+        let activityVC = UIActivityViewController(
+            activityItems: [text],
+            applicationActivities: nil
+        )
+
+        guard let windowScene = UIApplication.shared.connectedScenes
+            .compactMap({ $0 as? UIWindowScene }).first,
+              let rootVC = windowScene.windows.first?.rootViewController else { return }
+
+        var presenter = rootVC
+        while let presented = presenter.presentedViewController {
+            presenter = presented
+        }
+
+        activityVC.popoverPresentationController?.sourceView = presenter.view
+        activityVC.popoverPresentationController?.sourceRect = CGRect(
+            x: presenter.view.bounds.midX, y: 0, width: 0, height: 0
+        )
+
+        presenter.present(activityVC, animated: true)
     }
 
     @MainActor
@@ -691,6 +726,10 @@ struct SegmentBreakdownView: View {
         segments.contains { $0.avgPower != nil }
     }
 
+    private var hasStrokes: Bool {
+        workoutType == .swimming && segments.contains { $0.strokeCount != nil }
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Splits")
@@ -716,6 +755,10 @@ struct SegmentBreakdownView: View {
                 }
                 if hasPower {
                     Text("Power")
+                        .frame(maxWidth: .infinity, alignment: .trailing)
+                }
+                if hasStrokes {
+                    Text("Strokes")
                         .frame(maxWidth: .infinity, alignment: .trailing)
                 }
                 if hasElevation {
@@ -753,6 +796,11 @@ struct SegmentBreakdownView: View {
 
                     if hasPower {
                         Text(seg.avgPower.map { String(format: "%.0f W", $0) } ?? "–")
+                            .frame(maxWidth: .infinity, alignment: .trailing)
+                    }
+
+                    if hasStrokes {
+                        Text(seg.strokeCount.map { "\($0)" } ?? "–")
                             .frame(maxWidth: .infinity, alignment: .trailing)
                     }
 

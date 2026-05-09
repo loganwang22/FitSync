@@ -22,6 +22,10 @@ struct CoachTabView: View {
                             )
                         }
 
+                        if let metrics = viewModel.fitnessMetrics {
+                            FitnessMetricsSection(metrics: metrics)
+                        }
+
                         weeklyLoadSection(goal)
 
                         // Training plan
@@ -44,6 +48,9 @@ struct CoachTabView: View {
                     } else {
                         emptyGoalState
                         chatEntrySection
+                        if let metrics = viewModel.fitnessMetrics {
+                            FitnessMetricsSection(metrics: metrics)
+                        }
                     }
                 }
                 .padding()
@@ -66,7 +73,7 @@ struct CoachTabView: View {
                 }
             }
             .navigationDestination(isPresented: $viewModel.showChat) {
-                CoachChatView(
+                CoachChatHistoryView(
                     repository: viewModel.repository,
                     healthKit: healthKit,
                     goal: viewModel.goal

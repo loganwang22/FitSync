@@ -6,8 +6,17 @@ struct CoachChatView: View {
     let goal: TrainingGoal?
     @FocusState private var inputFocused: Bool
 
-    init(repository: WorkoutRepository, healthKit: HealthKitService, goal: TrainingGoal?) {
-        _viewModel = State(wrappedValue: CoachChatViewModel(repository: repository, healthKit: healthKit))
+    init(
+        repository: WorkoutRepository,
+        healthKit: HealthKitService,
+        goal: TrainingGoal?,
+        session: CoachChatSession? = nil
+    ) {
+        _viewModel = State(wrappedValue: CoachChatViewModel(
+            repository: repository,
+            healthKit: healthKit,
+            session: session
+        ))
         self.goal = goal
     }
 
@@ -28,7 +37,7 @@ struct CoachChatView: View {
                                     AICoachService.kimiThinkingEnabled = val
                                 }
                             Text(kimiThinking
-                                 ? "Uses kimi-k2.5 — slower, deeper reasoning"
+                                 ? "Uses kimi-k2.6 — slower, deeper reasoning"
                                  : "Uses kimi-k2-turbo — faster responses")
                         } label: {
                             Image(systemName: kimiThinking ? "brain.head.profile" : "bolt.fill")

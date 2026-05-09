@@ -47,6 +47,7 @@ final class WorkoutDetailViewModel {
         var avgHeartRate: Double?
         var elevationChange: Double?
         var avgPower: Double?
+        var strokeCount: Int?
 
         var label: String { "\(id + 1)" }
     }
@@ -76,6 +77,22 @@ final class WorkoutDetailViewModel {
     // Similar workouts (matched runs)
     var similarWorkouts: [Workout] = []
     private var repository: WorkoutRepository?
+
+    // Pause windows parsed from HKWorkoutEvents. Used to exclude paused time
+    // from per-split duration so pace matches what Strava / Apple Fitness show.
+    private var pauseIntervals: [DateInterval] = []
+
+    // Device-calibrated cumulative distance samples
+    // (distanceWalkingRunning / distanceCycling). Preferred over raw haversine
+    // for computing split boundaries because Apple's stride-model + GPS fusion
+    // produces a smoother, better-calibrated distance curve than summing noisy
+    // raw GPS points.
+    private struct DistanceSample {
+        let start: Date
+        let end: Date
+        let meters: Double
+    }
+    private var distanceSamples: [DistanceSample] = []
 
     init(workout: Workout) {
         self.workout = workout
@@ -109,6 +126,15 @@ final class WorkoutDetailViewModel {
         if workout.type == .swimming && swimmingLapEvents.isEmpty {
             await loadHKWorkout()
             loadSwimmingLaps()
+            await loadSwimmingStrokes()
+        }
+
+        // Pause windows + device-calibrated distance samples are not cached;
+        // load them fresh so splits always use current HK data.
+        await loadHKWorkout()
+        loadPauseWindows()
+        if workout.type != .swimming {
+            await loadDistanceSamples()
         }
 
         // Compute segments without route data first (even segments for swimming,
@@ -129,6 +155,10 @@ final class WorkoutDetailViewModel {
 
         await fetchFromHealthKit()
         saveToCache()
+        loadPauseWindows()
+        if workout.type != .swimming {
+            await loadDistanceSamples()
+        }
         computeSegments()
         isLoading = false
 
@@ -286,6 +316,7 @@ final class WorkoutDetailViewModel {
         }
         if workout.type == .swimming {
             loadSwimmingLaps()
+            await loadSwimmingStrokes()
         }
     }
 
@@ -396,12 +427,35 @@ final class WorkoutDetailViewModel {
     // MARK: - Swimming lap events
 
     private var swimmingLapEvents: [HKWorkoutEvent] = []
+    private var swimmingStrokeSamples: [HKQuantitySample] = []
 
     private func loadSwimmingLaps() {
         guard workout.type == .swimming, let hkw = hkWorkout else { return }
         swimmingLapEvents = (hkw.workoutEvents ?? [])
             .filter { $0.type == .lap }
             .sorted { $0.dateInterval.start < $1.dateInterval.start }
+    }
+
+    private func loadSwimmingStrokes() async {
+        guard workout.type == .swimming else { return }
+        let type = HKQuantityType(.swimmingStrokeCount)
+        // Prefer samples from the HK workout to avoid picking up other swim
+        // sessions that happen to overlap the time window.
+        if let hkw = hkWorkout {
+            let predicate = HKQuery.predicateForObjects(from: hkw)
+            let descriptor = HKSampleQueryDescriptor(
+                predicates: [.quantitySample(type: type, predicate: predicate)],
+                sortDescriptors: [SortDescriptor(\.startDate)]
+            )
+            if let samples = try? await descriptor.result(for: store), !samples.isEmpty {
+                swimmingStrokeSamples = samples
+                return
+            }
+        }
+        // Fallback: time-window query.
+        if let samples = try? await fetchSamples(type: type) {
+            swimmingStrokeSamples = samples.sorted { $0.startDate < $1.startDate }
+        }
     }
 
     // MARK: - Per-distance segments (splits)
@@ -411,6 +465,8 @@ final class WorkoutDetailViewModel {
 
         if workout.type == .swimming && !swimmingLapEvents.isEmpty {
             computeSwimmingLapSegments()
+        } else if computeDistanceSampleSegments(segmentDistance: segmentDistance) {
+            // Device-calibrated distance samples produced the splits.
         } else if cachedRoutePoints.isEmpty {
             computeEvenSegments(segmentDistance: segmentDistance)
         } else {
@@ -445,12 +501,14 @@ final class WorkoutDetailViewModel {
         for (i, event) in swimmingLapEvents.enumerated() {
             let end = event.dateInterval.end
             let duration = end.timeIntervalSince(boundary)
+            let strokes = strokeCount(from: boundary, to: end)
             result.append(WorkoutSegment(
                 id: i,
                 startTime: boundary,
                 endTime: end,
                 distanceMeters: perLapDist,
-                durationSeconds: max(duration, 0)
+                durationSeconds: max(duration, 0),
+                strokeCount: strokes
             ))
             boundary = end
         }
@@ -458,41 +516,117 @@ final class WorkoutDetailViewModel {
         segments = result
     }
 
+    /// Sum swim strokes that fall within [start, end). A sample straddling a
+    /// lap boundary is pro-rated by the fraction of its duration that falls
+    /// inside the lap — this avoids double-counting while handling the common
+    /// case where Apple Watch emits one sample per length.
+    ///
+    /// Values are reported exactly as Apple Watch records them — note that
+    /// Apple uses a watch-arm-cycle convention for freestyle/backstroke, so
+    /// those lap totals will appear ~half of what a swimmer counts by hand.
+    /// This is intentional; we show raw HealthKit data.
+    private func strokeCount(from start: Date, to end: Date) -> Int? {
+        guard !swimmingStrokeSamples.isEmpty, end > start else { return nil }
+        let lapSeconds = end.timeIntervalSince(start)
+        guard lapSeconds > 0 else { return nil }
+
+        var total = 0.0
+        var touched = false
+        for sample in swimmingStrokeSamples {
+            let s = max(sample.startDate, start)
+            let e = min(sample.endDate, end)
+            guard e > s else { continue }
+            touched = true
+            let sampleSeconds = sample.endDate.timeIntervalSince(sample.startDate)
+            let count = sample.quantity.doubleValue(for: .count())
+            if sampleSeconds <= 0 {
+                total += count
+            } else {
+                let overlap = e.timeIntervalSince(s)
+                total += count * (overlap / sampleSeconds)
+            }
+        }
+        guard touched else { return nil }
+        return Int(total.rounded())
+    }
+
+    /// Lightweight smoothed copy of a GPS path (used as the input to
+    /// `computeGPSSegments`). Created locally because we don't want to mutate
+    /// the persisted `RoutePoint` SwiftData rows.
+    private struct PathPoint {
+        let latitude: Double
+        let longitude: Double
+        let altitude: Double
+        let timestamp: Date
+    }
+
+    /// 3-point moving-average smoothing on lat/lon/altitude. Reduces GPS jitter
+    /// that otherwise inflates haversine cumulative distance and shifts split
+    /// boundaries. Cheap (O(n)) and good enough as a fallback when device-
+    /// calibrated `distanceWalkingRunning` samples aren't available.
+    private func smoothedPath() -> [PathPoint] {
+        let pts = cachedRoutePoints
+        guard pts.count >= 3 else {
+            return pts.map {
+                PathPoint(latitude: $0.latitude, longitude: $0.longitude,
+                          altitude: $0.altitude, timestamp: $0.timestamp)
+            }
+        }
+        var out: [PathPoint] = []
+        out.reserveCapacity(pts.count)
+        for i in 0..<pts.count {
+            let lo = max(0, i - 1)
+            let hi = min(pts.count - 1, i + 1)
+            var lat = 0.0, lon = 0.0, alt = 0.0
+            var n = 0
+            for j in lo...hi {
+                lat += pts[j].latitude
+                lon += pts[j].longitude
+                alt += pts[j].altitude
+                n += 1
+            }
+            out.append(PathPoint(
+                latitude: lat / Double(n),
+                longitude: lon / Double(n),
+                altitude: alt / Double(n),
+                timestamp: pts[i].timestamp
+            ))
+        }
+        return out
+    }
+
     private func computeGPSSegments(segmentDistance: Double) {
-        let points = cachedRoutePoints
+        let points = smoothedPath()
         guard points.count > 1 else { return }
 
         var result: [WorkoutSegment] = []
         var segStart = points[0].timestamp
         var cumDist = 0.0
-        var segElevChange = 0.0
-        var lastAlt = points[0].altitude
         var segIdx = 0
 
         for i in 1..<points.count {
             let prev = CLLocation(latitude: points[i - 1].latitude, longitude: points[i - 1].longitude)
             let curr = CLLocation(latitude: points[i].latitude, longitude: points[i].longitude)
-            cumDist += curr.distance(from: prev)
-
-            let altDelta = points[i].altitude - lastAlt
-            if abs(altDelta) > 1.0 {
-                segElevChange += altDelta
-                lastAlt = points[i].altitude
+            let d = curr.distance(from: prev)
+            // Reject GPS jumps that imply >50 m/s — clear noise spikes.
+            let dt = points[i].timestamp.timeIntervalSince(points[i - 1].timestamp)
+            if dt > 0 && d / dt < 50 {
+                cumDist += d
             }
 
             if cumDist >= segmentDistance {
+                let endT = points[i].timestamp
                 result.append(WorkoutSegment(
                     id: segIdx,
                     startTime: segStart,
-                    endTime: points[i].timestamp,
+                    endTime: endT,
                     distanceMeters: cumDist,
-                    durationSeconds: points[i].timestamp.timeIntervalSince(segStart),
-                    elevationChange: segElevChange
+                    durationSeconds: activeDuration(from: segStart, to: endT),
+                    elevationChange: elevationChange(from: segStart, to: endT)
                 ))
                 segIdx += 1
-                segStart = points[i].timestamp
+                segStart = endT
                 cumDist = 0
-                segElevChange = 0
             }
         }
 
@@ -503,12 +637,182 @@ final class WorkoutDetailViewModel {
                 startTime: segStart,
                 endTime: last.timestamp,
                 distanceMeters: cumDist,
-                durationSeconds: last.timestamp.timeIntervalSince(segStart),
-                elevationChange: segElevChange
+                durationSeconds: activeDuration(from: segStart, to: last.timestamp),
+                elevationChange: elevationChange(from: segStart, to: last.timestamp)
             ))
         }
 
         segments = result
+    }
+
+    // MARK: - Pause windows
+
+    /// Parses `HKWorkoutEvent`s into pairs of `[pause, resume]` time intervals.
+    /// Both explicit (`.pause`/`.resume`) and motion-based (`.motionPaused`/
+    /// `.motionResumed`) events are honored. An unterminated pause at the end
+    /// runs through `workout.endDate`.
+    private func loadPauseWindows() {
+        guard let events = hkWorkout?.workoutEvents, !events.isEmpty else {
+            pauseIntervals = []
+            return
+        }
+        let sorted = events.sorted { $0.dateInterval.start < $1.dateInterval.start }
+        var result: [DateInterval] = []
+        var pauseStart: Date? = nil
+        for e in sorted {
+            switch e.type {
+            case .pause, .motionPaused:
+                if pauseStart == nil { pauseStart = e.dateInterval.start }
+            case .resume, .motionResumed:
+                if let s = pauseStart {
+                    let end = e.dateInterval.start
+                    if end > s { result.append(DateInterval(start: s, end: end)) }
+                    pauseStart = nil
+                }
+            default:
+                break
+            }
+        }
+        if let s = pauseStart, workout.endDate > s {
+            result.append(DateInterval(start: s, end: workout.endDate))
+        }
+        pauseIntervals = result
+    }
+
+    /// Wall-clock seconds between `start` and `end` minus any time that fell
+    /// inside a pause window. Used so split pace excludes pauses (matching
+    /// Strava / Apple Fitness conventions).
+    private func activeDuration(from start: Date, to end: Date) -> TimeInterval {
+        let total = end.timeIntervalSince(start)
+        guard total > 0 else { return 0 }
+        guard !pauseIntervals.isEmpty else { return total }
+        var paused: TimeInterval = 0
+        for p in pauseIntervals {
+            let s = max(p.start, start)
+            let e = min(p.end, end)
+            if e > s { paused += e.timeIntervalSince(s) }
+        }
+        return max(total - paused, 0)
+    }
+
+    // MARK: - Device-calibrated distance samples
+
+    private func loadDistanceSamples() async {
+        let typeID: HKQuantityTypeIdentifier
+        switch workout.type {
+        case .running:  typeID = .distanceWalkingRunning
+        case .cycling:  typeID = .distanceCycling
+        case .swimming:
+            distanceSamples = []
+            return
+        }
+        let type = HKQuantityType(typeID)
+        guard let samples = try? await fetchSamples(type: type, sourceFilterToWorkout: true) else {
+            distanceSamples = []
+            return
+        }
+        distanceSamples = samples
+            .map {
+                DistanceSample(
+                    start: $0.startDate,
+                    end: $0.endDate,
+                    meters: $0.quantity.doubleValue(for: .meter())
+                )
+            }
+            .sorted { $0.start < $1.start }
+    }
+
+    /// Builds splits from cumulative `distanceWalkingRunning` /
+    /// `distanceCycling` samples. Each sample carries a meter count over a
+    /// short [start, end] window; we walk those to find the exact moment the
+    /// cumulative distance crosses each km boundary, interpolating within the
+    /// sample. Returns `false` if no calibrated distance is available so the
+    /// caller can fall back to GPS-based splits.
+    private func computeDistanceSampleSegments(segmentDistance: Double) -> Bool {
+        guard !distanceSamples.isEmpty else { return false }
+
+        var result: [WorkoutSegment] = []
+        var segStartTime = workout.startDate
+        var segStartCum = 0.0
+        var cum = 0.0
+        var nextBoundary = segmentDistance
+        var segIdx = 0
+
+        for sample in distanceSamples {
+            let sampleStartCum = cum
+            let sampleEndCum = cum + sample.meters
+            let sampleDur = max(sample.end.timeIntervalSince(sample.start), 0)
+
+            while sampleEndCum >= nextBoundary {
+                let into = nextBoundary - sampleStartCum
+                let frac = sample.meters > 0 ? min(max(into / sample.meters, 0), 1) : 0
+                let crossTime = sample.start.addingTimeInterval(sampleDur * frac)
+
+                result.append(WorkoutSegment(
+                    id: segIdx,
+                    startTime: segStartTime,
+                    endTime: crossTime,
+                    distanceMeters: nextBoundary - segStartCum,
+                    durationSeconds: activeDuration(from: segStartTime, to: crossTime),
+                    elevationChange: elevationChange(from: segStartTime, to: crossTime)
+                ))
+                segIdx += 1
+                segStartTime = crossTime
+                segStartCum = nextBoundary
+                nextBoundary += segmentDistance
+            }
+
+            cum = sampleEndCum
+        }
+
+        // Trailing partial split if it covers > 10% of a full split.
+        let trailing = cum - segStartCum
+        if trailing > segmentDistance * 0.1 {
+            let endTime = distanceSamples.last?.end ?? workout.endDate
+            result.append(WorkoutSegment(
+                id: segIdx,
+                startTime: segStartTime,
+                endTime: endTime,
+                distanceMeters: trailing,
+                durationSeconds: activeDuration(from: segStartTime, to: endTime),
+                elevationChange: elevationChange(from: segStartTime, to: endTime)
+            ))
+        }
+
+        guard !result.isEmpty else { return false }
+        segments = result
+        return true
+    }
+
+    /// Sum of altitude deltas across the route slice for `[start, end]`, using
+    /// 3-point moving-average smoothing on altitude and a 0.5 m deadband on
+    /// per-step deltas (so sub-meter barometer noise doesn't accumulate).
+    /// Returns `nil` when no GPS slice covers the range yet.
+    private func elevationChange(from start: Date, to end: Date) -> Double? {
+        let slice = cachedRoutePoints.filter { $0.timestamp >= start && $0.timestamp <= end }
+        guard slice.count >= 2 else { return nil }
+
+        let alts = slice.map(\.altitude)
+        var smoothed: [Double] = []
+        smoothed.reserveCapacity(alts.count)
+        for i in 0..<alts.count {
+            let lo = max(0, i - 1)
+            let hi = min(alts.count - 1, i + 1)
+            var sum = 0.0
+            for j in lo...hi { sum += alts[j] }
+            smoothed.append(sum / Double(hi - lo + 1))
+        }
+
+        var delta = 0.0
+        var last = smoothed[0]
+        for a in smoothed.dropFirst() {
+            let d = a - last
+            if abs(d) > 0.5 {
+                delta += d
+                last = a
+            }
+        }
+        return delta
     }
 
     /// For workouts without route points (e.g. pool swimming), divide evenly.

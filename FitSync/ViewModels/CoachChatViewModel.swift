@@ -7,7 +7,11 @@ final class CoachChatViewModel {
     let repository: WorkoutRepository
     let healthKit: HealthKitService
 
-    var messages: [CoachChatMessage] = []
+    private(set) var session: CoachChatSession
+    var messages: [CoachChatMessage] {
+        get { session.messages }
+        set { session.messages = newValue }
+    }
     var input: String = ""
     var isSending: Bool = false
     var currentToolName: String? = nil
@@ -15,9 +19,14 @@ final class CoachChatViewModel {
 
     private var toolExecutor: CoachToolExecutor
 
-    init(repository: WorkoutRepository, healthKit: HealthKitService) {
+    init(
+        repository: WorkoutRepository,
+        healthKit: HealthKitService,
+        session: CoachChatSession? = nil
+    ) {
         self.repository = repository
         self.healthKit = healthKit
+        self.session = session ?? CoachChatSession()
         self.toolExecutor = CoachToolExecutor(repository: repository, healthKit: healthKit)
     }
 
@@ -60,6 +69,7 @@ final class CoachChatViewModel {
                 toolExecutor: toolExecutor
             )
             messages.append(contentsOf: newMessages)
+            persistSession()
         } catch {
             errorMessage = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
             if messages.last?.id == userMessage.id {
@@ -70,7 +80,15 @@ final class CoachChatViewModel {
     }
 
     func clearConversation() {
-        messages.removeAll()
+        let oldID = session.id
+        session = CoachChatSession()
         errorMessage = nil
+        CoachChatStore.shared.delete(id: oldID)
+    }
+
+    private func persistSession() {
+        session.updatedAt = .now
+        session.title = CoachChatSession.derivedTitle(from: session.messages)
+        CoachChatStore.shared.save(session)
     }
 }

@@ -6,7 +6,9 @@ import SwiftData
 @Observable
 final class CoachViewModel {
     let repository: WorkoutRepository
+    let healthKit: HealthKitService
     private let planGenerator = TrainingPlanGenerator()
+    private let metricsEstimator = FitnessMetricsEstimator()
 
     var goal: TrainingGoal? {
         get {
@@ -37,13 +39,17 @@ final class CoachViewModel {
     var predictionHistory: [RacePredictor.WeeklyPrediction] = []
     var predictionBaselineAgeDays: Int?
 
+    // Fitness metrics (FTP / LTHR / W/kg / threshold pace)
+    var fitnessMetrics: FitnessMetrics?
+
     var isLoading = false
     var showGoalSheet = false
     var showSettingsSheet = false
     var showChat = false
 
-    init(repository: WorkoutRepository) {
+    init(repository: WorkoutRepository, healthKit: HealthKitService) {
         self.repository = repository
+        self.healthKit = healthKit
     }
 
     func load() {
@@ -94,6 +100,20 @@ final class CoachViewModel {
             prediction = nil
             predictionHistory = []
             predictionBaselineAgeDays = nil
+        }
+
+        // Fitness metrics run regardless of whether a goal is set — they're
+        // useful on their own. Body mass lookup is async; compute a first
+        // pass without weight (so FTP/LTHR show up immediately) and update
+        // with W/kg once the weight resolves.
+        let workouts = repository.fetchWorkouts()
+        fitnessMetrics = metricsEstimator.estimate(workouts: workouts, bodyMassKg: nil)
+        Task { [weak self] in
+            guard let self else { return }
+            let kg = try? await self.healthKit.fetchLatestBodyMassKg()
+            self.fitnessMetrics = self.metricsEstimator.estimate(
+                workouts: workouts, bodyMassKg: kg
+            )
         }
     }
 

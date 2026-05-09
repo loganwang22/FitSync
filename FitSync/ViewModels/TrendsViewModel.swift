@@ -119,10 +119,10 @@ final class TrendsViewModel {
     }
 
     private func loadCardioHealth() async {
-        let sixMonthsAgo = Calendar.current.date(byAdding: .month, value: -6, to: .now) ?? .now
-        async let vo2 = healthKit.fetchVO2MaxSamples(from: sixMonthsAgo)
-        async let rhr = healthKit.fetchRestingHeartRate(from: sixMonthsAgo)
-        async let hrv = healthKit.fetchHRV(from: sixMonthsAgo)
+        let oneYearAgo = Calendar.current.date(byAdding: .month, value: -12, to: .now) ?? .now
+        async let vo2 = healthKit.fetchVO2MaxSamples(from: oneYearAgo)
+        async let rhr = healthKit.fetchRestingHeartRate(from: oneYearAgo)
+        async let hrv = healthKit.fetchHRV(from: oneYearAgo)
         vo2MaxSamples = (try? await vo2) ?? []
         restingHRSamples = (try? await rhr) ?? []
         hrvSamples = (try? await hrv) ?? []

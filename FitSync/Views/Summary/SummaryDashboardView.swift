@@ -76,14 +76,11 @@ struct SummaryDashboardView: View {
 
                             ForEach(viewModel.sportSummaries) { summary in
                                 if let type = summary.workoutType {
-                                    NavigationLink {
-                                        FilteredWorkoutListView(
-                                            workoutType: type,
-                                            range: viewModel.selectedRange,
-                                            date: viewModel.selectedDate,
-                                            repository: viewModel.repository
-                                        )
-                                    } label: {
+                                    NavigationLink(value: SportFilterRoute(
+                                        workoutType: type,
+                                        range: viewModel.selectedRange,
+                                        date: viewModel.selectedDate
+                                    )) {
                                         SportSummaryRow(type: type, summary: summary)
                                     }
                                     .buttonStyle(.plain)
@@ -96,12 +93,26 @@ struct SummaryDashboardView: View {
                 .padding(.vertical)
             }
             .navigationTitle("Summary")
+            .navigationDestination(for: SportFilterRoute.self) { route in
+                FilteredWorkoutListView(
+                    workoutType: route.workoutType,
+                    range: route.range,
+                    date: route.date,
+                    repository: viewModel.repository
+                )
+            }
             .navigationDestination(for: Workout.self) { workout in
                 WorkoutDetailView(workout: workout, repository: viewModel.repository)
             }
             .onAppear { viewModel.load() }
         }
     }
+}
+
+struct SportFilterRoute: Hashable {
+    let workoutType: WorkoutType
+    let range: DateRange
+    let date: Date
 }
 
 struct MetricCard: View {

@@ -31,7 +31,7 @@ struct ContentView: View {
             }
 
             CoachTabView(
-                viewModel: CoachViewModel(repository: repository),
+                viewModel: CoachViewModel(repository: repository, healthKit: healthKit),
                 healthKit: healthKit
             )
             .tabItem {
