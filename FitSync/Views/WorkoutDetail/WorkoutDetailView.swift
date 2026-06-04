@@ -126,9 +126,6 @@ struct WorkoutDetailView: View {
         .padding(.horizontal, 0)
         .padding(.top, 8)
         .padding(.bottom, 32)
-        .navigationDestination(for: Workout.self) { w in
-            WorkoutDetailView(workout: w, repository: repository)
-        }
     }
 
     @MainActor

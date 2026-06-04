@@ -105,14 +105,7 @@ extension AICoachService {
 
             let start = Date()
             aiCoachLogger.info("Claude chat round start")
-            let data: Data
-            let response: URLResponse
-            do {
-                (data, response) = try await URLSession.shared.data(for: request)
-            } catch {
-                aiCoachLogger.error("Claude chat transport error after \(Date().timeIntervalSince(start), format: .fixed(precision: 1))s: \(error.localizedDescription)")
-                throw error
-            }
+            let (data, response) = try await aiCoachPerform(request, label: "Claude chat")
             let elapsed = Date().timeIntervalSince(start)
             let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
 
@@ -258,14 +251,7 @@ extension AICoachService {
 
             let start = Date()
             aiCoachLogger.info("Kimi chat round start model=\(cfg.model)")
-            let data: Data
-            let response: URLResponse
-            do {
-                (data, response) = try await URLSession.shared.data(for: request)
-            } catch {
-                aiCoachLogger.error("Kimi chat transport error after \(Date().timeIntervalSince(start), format: .fixed(precision: 1))s: \(error.localizedDescription)")
-                throw error
-            }
+            let (data, response) = try await aiCoachPerform(request, label: "Kimi chat")
             let elapsed = Date().timeIntervalSince(start)
             let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
 

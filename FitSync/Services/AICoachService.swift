@@ -4,6 +4,54 @@ import os
 let aiCoachLogger = Logger(subsystem: "com.loganwang.FitSync", category: "AICoach")
 let aiCoachRequestTimeout: TimeInterval = 180
 
+/// Shared session that survives brief connectivity blips (Wi-Fi ↔ cellular).
+/// Using a dedicated configuration also gives us our own connection pool,
+/// so a stale-pool issue in one part of the app can't poison AI requests.
+let aiCoachURLSession: URLSession = {
+    let cfg = URLSessionConfiguration.default
+    cfg.waitsForConnectivity = true
+    cfg.timeoutIntervalForRequest = aiCoachRequestTimeout
+    cfg.timeoutIntervalForResource = aiCoachRequestTimeout
+    return URLSession(configuration: cfg)
+}()
+
+/// Performs an HTTP request and automatically retries on transient transport
+/// errors. The most common cause is NSURLErrorNetworkConnectionLost (-1005),
+/// where URLSession reuses a pooled HTTP/2 connection the server already
+/// closed. A single retry forces a fresh socket and usually succeeds.
+func aiCoachPerform(
+    _ request: URLRequest,
+    label: String,
+    maxRetries: Int = 2
+) async throws -> (Data, URLResponse) {
+    var attempt = 0
+    while true {
+        let start = Date()
+        do {
+            return try await aiCoachURLSession.data(for: request)
+        } catch let error as URLError {
+            let elapsed = Date().timeIntervalSince(start)
+            let retriable: Set<URLError.Code> = [
+                .networkConnectionLost,
+                .timedOut,
+                .cannotConnectToHost,
+                .dnsLookupFailed,
+                .notConnectedToInternet,
+                .secureConnectionFailed,
+            ]
+            if attempt < maxRetries, retriable.contains(error.code) {
+                attempt += 1
+                let backoff = UInt64(0.4 * Double(attempt) * 1_000_000_000)
+                aiCoachLogger.error("\(label) transient error \(error.code.rawValue) after \(elapsed, format: .fixed(precision: 1))s — retry \(attempt)/\(maxRetries)")
+                try? await Task.sleep(nanoseconds: backoff)
+                continue
+            }
+            aiCoachLogger.error("\(label) transport error after \(elapsed, format: .fixed(precision: 1))s: \(error.localizedDescription)")
+            throw error
+        }
+    }
+}
+
 // MARK: - Provider Protocol
 
 protocol AICoachProvider {
@@ -272,14 +320,7 @@ private struct ClaudeProvider: AICoachProvider {
 
         let start = Date()
         aiCoachLogger.info("Claude enhance request start")
-        let data: Data
-        let response: URLResponse
-        do {
-            (data, response) = try await URLSession.shared.data(for: request)
-        } catch {
-            aiCoachLogger.error("Claude enhance transport error after \(Date().timeIntervalSince(start), format: .fixed(precision: 1))s: \(error.localizedDescription)")
-            throw error
-        }
+        let (data, response) = try await aiCoachPerform(request, label: "Claude enhance")
         let elapsed = Date().timeIntervalSince(start)
         let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
 
@@ -325,14 +366,7 @@ private struct KimiProvider: AICoachProvider {
 
         let start = Date()
         aiCoachLogger.info("Kimi enhance request start model=\(cfg.model)")
-        let data: Data
-        let response: URLResponse
-        do {
-            (data, response) = try await URLSession.shared.data(for: request)
-        } catch {
-            aiCoachLogger.error("Kimi enhance transport error after \(Date().timeIntervalSince(start), format: .fixed(precision: 1))s: \(error.localizedDescription)")
-            throw error
-        }
+        let (data, response) = try await aiCoachPerform(request, label: "Kimi enhance")
         let elapsed = Date().timeIntervalSince(start)
         let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
 

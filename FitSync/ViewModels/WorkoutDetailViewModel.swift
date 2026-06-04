@@ -48,8 +48,11 @@ final class WorkoutDetailViewModel {
         var elevationChange: Double?
         var avgPower: Double?
         var strokeCount: Int?
+        /// Set on a trailing partial split to show its distance (e.g. "0.7")
+        /// instead of a sequential index, matching Strava.
+        var partialLabel: String?
 
-        var label: String { "\(id + 1)" }
+        var label: String { partialLabel ?? "\(id + 1)" }
     }
 
     // Cached route points (sorted once to avoid repeated O(n log n) sorts)
@@ -132,6 +135,10 @@ final class WorkoutDetailViewModel {
         // Pause windows + device-calibrated distance samples are not cached;
         // load them fresh so splits always use current HK data.
         await loadHKWorkout()
+        // Correct avg/max HR from the workout's own statistic even when the
+        // rest of the detail came from cache (no-op on the fresh path, where
+        // loadHeartRate already applied it).
+        applyWorkoutHRStatistics()
         loadPauseWindows()
         if workout.type != .swimming {
             await loadDistanceSamples()
@@ -359,9 +366,39 @@ final class WorkoutDetailViewModel {
                 bpm: sample.quantity.doubleValue(for: unit)
             )
         }
-        let values = heartRatePoints.map(\.bpm)
-        avgHeartRate = values.isEmpty ? nil : values.reduce(0, +) / Double(values.count)
-        maxHeartRate = values.max()
+        // Fallback figures: time-weighted mean over the recorded span (a plain
+        // sample mean over-weights densely-sampled stretches like intervals).
+        // `applyWorkoutHRStatistics()` overrides these with Apple's
+        // authoritative per-workout statistic when it's available.
+        let series = heartRatePoints.map { (t: $0.secondsFromStart, v: $0.bpm) }
+        if let firstT = series.first?.t, let lastT = series.last?.t, lastT > firstT {
+            avgHeartRate = timeWeightedAverage(series, from: firstT, to: lastT)
+        } else {
+            avgHeartRate = series.first?.v
+        }
+        maxHeartRate = heartRatePoints.map(\.bpm).max()
+
+        applyWorkoutHRStatistics()
+    }
+
+    /// Overrides avg/max HR with the workout's authoritative Apple-computed
+    /// statistic when available — the same figure Strava/Fitness display, and
+    /// one that covers the full workout even where our standalone HR-sample
+    /// query has gaps (e.g. the optical sensor's first-minutes lock-on).
+    /// Also rewrites the cached values so older caches (built by a gappy
+    /// sample average) are corrected on the next open without a resync.
+    private func applyWorkoutHRStatistics() {
+        guard let hkWorkout else { return }
+        let type = HKQuantityType(.heartRate)
+        let unit = HKUnit.count().unitDivided(by: .minute())
+        if let avg = hkWorkout.statistics(for: type)?.averageQuantity()?.doubleValue(for: unit) {
+            avgHeartRate = avg
+            workout.cachedAvgHeartRate = avg
+        }
+        if let mx = hkWorkout.statistics(for: type)?.maximumQuantity()?.doubleValue(for: unit) {
+            maxHeartRate = mx
+            workout.cachedMaxHeartRate = mx
+        }
     }
 
     // MARK: - Running-only metrics
@@ -459,6 +496,15 @@ final class WorkoutDetailViewModel {
     }
 
     // MARK: - Per-distance segments (splits)
+
+    /// Label for a trailing partial split. For km splits shows fractional km
+    /// ("0.7"); for shorter splits (swim) shows whole meters.
+    private func partialSplitLabel(distanceMeters: Double, segmentDistance: Double) -> String {
+        if segmentDistance >= 1000 {
+            return String(format: "%.1f", distanceMeters / 1000)
+        }
+        return "\(Int(distanceMeters.rounded()))"
+    }
 
     private func computeSegments() {
         let segmentDistance: Double = workout.type == .swimming ? 100.0 : 1000.0
@@ -638,7 +684,8 @@ final class WorkoutDetailViewModel {
                 endTime: last.timestamp,
                 distanceMeters: cumDist,
                 durationSeconds: activeDuration(from: segStart, to: last.timestamp),
-                elevationChange: elevationChange(from: segStart, to: last.timestamp)
+                elevationChange: elevationChange(from: segStart, to: last.timestamp),
+                partialLabel: partialSplitLabel(distanceMeters: cumDist, segmentDistance: segmentDistance)
             ))
         }
 
@@ -775,7 +822,8 @@ final class WorkoutDetailViewModel {
                 endTime: endTime,
                 distanceMeters: trailing,
                 durationSeconds: activeDuration(from: segStartTime, to: endTime),
-                elevationChange: elevationChange(from: segStartTime, to: endTime)
+                elevationChange: elevationChange(from: segStartTime, to: endTime),
+                partialLabel: partialSplitLabel(distanceMeters: trailing, segmentDistance: segmentDistance)
             ))
         }
 
@@ -847,42 +895,77 @@ final class WorkoutDetailViewModel {
                 startTime: segStart,
                 endTime: segStart.addingTimeInterval(segDur),
                 distanceMeters: remainder,
-                durationSeconds: segDur
+                durationSeconds: segDur,
+                partialLabel: partialSplitLabel(distanceMeters: remainder, segmentDistance: segmentDistance)
             ))
         }
 
         segments = result
     }
 
+    /// Time-weighted average of a `(time, value)` series over `[a, b]`.
+    /// Linearly interpolates between samples and carries the nearest sample
+    /// value across gaps at the window edges, so any window overlapping the
+    /// series yields a value.
+    ///
+    /// This matches how Strava/Apple average a split's HR over elapsed time,
+    /// rather than taking a plain mean of the raw samples — a plain mean
+    /// biases toward periods the watch sampled more densely (HR sampling
+    /// speeds up when the rate is changing) and can leave a short or
+    /// boundary-aligned split empty when its samples land just outside the
+    /// window.
+    private func timeWeightedAverage(_ pts: [(t: Double, v: Double)], from a: Double, to b: Double) -> Double? {
+        guard b > a, let first = pts.first, let last = pts.last else { return nil }
+
+        var area = 0.0
+
+        // Head: carry the first sample value back to the window start.
+        if a < first.t {
+            let hi = min(b, first.t)
+            if hi > a { area += first.v * (hi - a) }
+        }
+        // Tail: carry the last sample value forward to the window end.
+        if b > last.t {
+            let lo = max(a, last.t)
+            if b > lo { area += last.v * (b - lo) }
+        }
+        // Middle: trapezoidal integration of the linearly-interpolated series.
+        for i in 0..<(pts.count - 1) {
+            let p0 = pts[i], p1 = pts[i + 1]
+            guard p1.t > p0.t else { continue }
+            let lo = max(a, p0.t)
+            let hi = min(b, p1.t)
+            guard hi > lo else { continue }
+            let span = p1.t - p0.t
+            let vLo = p0.v + (p1.v - p0.v) * (lo - p0.t) / span
+            let vHi = p0.v + (p1.v - p0.v) * (hi - p0.t) / span
+            area += (vLo + vHi) / 2 * (hi - lo)
+        }
+
+        return area / (b - a)
+    }
+
     private func assignHeartRateToSegments() {
         guard !heartRatePoints.isEmpty else { return }
         let start = workout.startDate
+        let series = heartRatePoints.map { (t: $0.secondsFromStart, v: $0.bpm) }
 
         for i in 0..<segments.count {
-            let segStartSec = segments[i].startTime.timeIntervalSince(start)
-            let segEndSec = segments[i].endTime.timeIntervalSince(start)
-            let hrs = heartRatePoints.filter {
-                $0.secondsFromStart >= segStartSec && $0.secondsFromStart < segEndSec
-            }
-            if !hrs.isEmpty {
-                segments[i].avgHeartRate = hrs.map(\.bpm).reduce(0, +) / Double(hrs.count)
-            }
+            let a = segments[i].startTime.timeIntervalSince(start)
+            let b = segments[i].endTime.timeIntervalSince(start)
+            segments[i].avgHeartRate = timeWeightedAverage(series, from: a, to: b)
         }
     }
 
     private func assignPowerToSegments() {
         guard !powerPoints.isEmpty else { return }
         let start = workout.startDate
+        let series = powerPoints.map { (t: $0.secondsFromStart, v: $0.watts) }
 
         for i in 0..<segments.count {
-            let segStartSec = segments[i].startTime.timeIntervalSince(start)
-            let segEndSec = segments[i].endTime.timeIntervalSince(start)
-            let pws = powerPoints.filter {
-                $0.secondsFromStart >= segStartSec && $0.secondsFromStart < segEndSec
-            }
-            if !pws.isEmpty {
-                segments[i].avgPower = pws.map(\.watts).reduce(0, +) / Double(pws.count)
-            }
+            let a = segments[i].startTime.timeIntervalSince(start)
+            let b = segments[i].endTime.timeIntervalSince(start)
+            segments[i].avgPower = timeWeightedAverage(series, from: a, to: b)
         }
     }
 

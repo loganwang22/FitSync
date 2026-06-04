@@ -24,7 +24,14 @@ final class SyncCoordinator {
         defer { isSyncing = false }
 
         do {
-            let since = lastSyncDate ?? Calendar.current.date(byAdding: .month, value: -historicalMonths, to: .now)!
+            let initialPull = Calendar.current.date(byAdding: .month, value: -historicalMonths, to: .now)!
+            let recentWindow = Calendar.current.date(byAdding: .hour, value: -24, to: .now)!
+            let since: Date
+            if let last = lastSyncDate {
+                since = min(last, recentWindow)
+            } else {
+                since = initialPull
+            }
             let hkWorkouts = try await healthKit.fetchWorkouts(from: since)
 
             let existingByUUID = Dictionary(
